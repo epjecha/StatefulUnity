@@ -1,0 +1,12 @@
+{
+    "name": "com.fofx.stateful",
+    "version": "1.0.0",
+    "displayName": "Stateful",
+    "description": "Observable state management for Unity.",
+    "unity": "2021.3",
+    "author": {
+        "name": "Elliot Pjecha",
+        "email": "epjecha@gmail.com"
+    },
+    "dependencies": {}
+}
