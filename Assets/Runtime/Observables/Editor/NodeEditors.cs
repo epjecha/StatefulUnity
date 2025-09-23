@@ -6,8 +6,6 @@ using System.Linq;
 using UnityEngine;
 using UnityEditor;
 
-using Unity.Mathematics;
-
 namespace FofX.Stateful
 {
     public static class NodeEditors
@@ -243,29 +241,6 @@ namespace FofX.Stateful
             else if (type == typeof(double))
             {
                 return EditorGUILayout.DoubleField(label, (double)value);
-            }
-            else if (type == typeof(double2))
-            {
-                var d2 = (double2)value;
-                EditorGUILayout.LabelField(label);
-                EditorGUI.indentLevel++;
-                d2.x = EditorGUILayout.DoubleField("X", d2.x);
-                d2.y = EditorGUILayout.DoubleField("Y", d2.y);
-                EditorGUI.indentLevel--;
-
-                return d2;
-            }
-            else if (type == typeof(double3))
-            {
-                var d3 = (double3)value;
-                EditorGUILayout.LabelField(label);
-                EditorGUI.indentLevel++;
-                d3.x = EditorGUILayout.DoubleField("X", d3.x);
-                d3.y = EditorGUILayout.DoubleField("Y", d3.y);
-                d3.z = EditorGUILayout.DoubleField("Z", d3.z);
-                EditorGUI.indentLevel--;
-
-                return d3;
             }
             else if (type == typeof(Bounds))
             {
