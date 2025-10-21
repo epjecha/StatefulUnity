@@ -101,6 +101,8 @@ namespace FofX.Stateful
             }
         }
 
+        public ObservableNodeContext() : this(new DefaultLogger()) { }
+
         public ObservableNodeContext(ILogger logger)
         {
             _mainThread = Thread.CurrentThread;
