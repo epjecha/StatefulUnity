@@ -493,10 +493,7 @@ namespace FofX.Stateful
                 {
                     observer.nodes.Remove(source);
                     if (observer.nodes.Count == 0)
-                    {
-                        _observationFrame.pendingObservers.Remove(observer);
                         _observationFrame.observersToDispose.Add(observer); //wait to remove this observer so that client-code DeregisterObserver calls can take precedence
-                    }
                 }
             }
         }
