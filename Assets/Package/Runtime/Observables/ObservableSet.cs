@@ -96,10 +96,10 @@ namespace FofX.Stateful
                 throw new Exception($"{copyTo.nodePath} is not a {nameof(ObservableSet<T>)}");
 
             foreach (var toRemove in copyToSet.Except(_hashSet).ToArray())
-                Remove(toRemove);
+                copyToSet.Remove(toRemove);
 
             foreach (var toAdd in _hashSet.Except(copyToSet).ToArray())
-                Add(toAdd);
+                copyToSet.Add(toAdd);
         }
 
         public override void Reset()

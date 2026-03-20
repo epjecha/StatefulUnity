@@ -203,7 +203,7 @@ namespace FofX.Stateful
             var toRemove = copyToDict.keys.Except(keys).ToArray();
 
             foreach (var keyToRemove in toRemove)
-                Remove(keyToRemove);
+                copyToDict.Remove(keyToRemove);
 
             foreach (var kvpToCopy in _dictionary)
                 kvpToCopy.Value.CopyTo(copyToDict.GetOrAdd(kvpToCopy.Key));
