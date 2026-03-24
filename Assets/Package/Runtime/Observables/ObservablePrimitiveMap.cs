@@ -15,6 +15,8 @@ namespace FofX.Stateful
 
         object GetLeft(object right);
         object GetRight(object left);
+        object ContainsLeft(object left);
+        object ContainsRight(object right);
         bool TryGetLeft(object right, out object left);
         bool TryGetRight(object left, out object right);
         bool Remove(object entry);
@@ -152,6 +154,12 @@ namespace FofX.Stateful
         public TLeft GetLeft(TRight right)
             => _rightToLeft[right];
 
+        public bool ContainsLeft(TLeft left)
+            => _leftToRight.ContainsKey(left);
+
+        public bool ContainsRight(TRight right)
+            => _rightToLeft.ContainsKey(right);
+
         public bool TryGetLeft(TRight right, out TLeft left)
             => _rightToLeft.TryGetValue(right, out left);
 
@@ -252,6 +260,12 @@ namespace FofX.Stateful
 
         object IObservablePrimitiveMap.GetRight(object left)
             => GetRight((TLeft)left);
+
+        object IObservablePrimitiveMap.ContainsLeft(object left)
+            => ContainsLeft((TLeft)left);
+
+        object IObservablePrimitiveMap.ContainsRight(object right)
+            => ContainsRight((TRight)right);
 
         void IObservablePrimitiveMap.Add(object entry)
             => Add((PrimitiveMapPair<TLeft, TRight>)entry);
