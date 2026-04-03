@@ -115,7 +115,12 @@ namespace FofX.Stateful
             T element = new T();
             element.Initialize(this, index.ToString());
             element.PostInitialize();
+
             _list.Insert(index, element);
+
+            for (int i = index + 1; i < _list.count; i++)
+                _list[i].Rename(i.ToString());
+
             return element;
         }
 
@@ -138,6 +143,10 @@ namespace FofX.Stateful
 
             var element = _list[index];
             _list.RemoveAt(index);
+
+            for (int i = index; i < _list.count; i++)
+                _list[i].Rename(i.ToString());
+
             element.Dispose();
         }
 

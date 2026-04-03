@@ -115,6 +115,8 @@ namespace FofX.Stateful
             nodeName = name;
             nodePath = name;
             InitializeInternal();
+            initialized = true;
+            PostInitialize();
         }
 
         public void Initialize(IStateNode parent, string name)
