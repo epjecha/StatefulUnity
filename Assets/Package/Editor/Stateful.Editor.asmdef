@@ -2,7 +2,8 @@
     "name": "Stateful.Editor",
     "rootNamespace": "",
     "references": [
-        "GUID:dc45d6bbcc15bf245b038035793d5e2e"
+        "GUID:dc45d6bbcc15bf245b038035793d5e2e",
+        "GUID:251962950e671c049bdb5ecb16442b37"
     ],
     "includePlatforms": [
         "Editor"

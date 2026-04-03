@@ -14,7 +14,6 @@
   <Project Path="Unity.VisualScripting.Core.Editor.csproj" />
   <Project Path="Unity.RenderPipelines.Universal.Editor.csproj" />
   <Project Path="Unity.PerformanceTesting.Editor.csproj" />
-  <Project Path="Stateful.csproj" />
   <Project Path="UnityEngine.TestRunner.csproj" />
   <Project Path="Unity.Burst.csproj" />
   <Project Path="Unity.VisualScripting.Flow.Editor.csproj" />
@@ -41,6 +40,7 @@
   <Project Path="UnityEditor.UI.csproj" />
   <Project Path="Unity.AI.Navigation.Editor.csproj" />
   <Project Path="Unity.Multiplayer.Center.Common.csproj" />
+  <Project Path="Stateful.csproj" />
   <Project Path="Unity.InputSystem.ForUI.csproj" />
   <Project Path="Stateful.Editor.csproj" />
   <Project Path="Unity.AI.Navigation.csproj" />
