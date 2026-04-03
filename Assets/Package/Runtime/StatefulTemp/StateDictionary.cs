@@ -92,7 +92,7 @@ namespace FofX.Stateful
             _getInitialValue = getInitialValue;
         }
 
-        public StateDictionary(SynchronizationContext context, string name = "root", Func<KeyValuePair<TKey, TValue>[]> getInitialValue = default) : base(context, name)
+        public StateDictionary(SynchronizationContext context, ILogger logger, string name = "root", Func<KeyValuePair<TKey, TValue>[]> getInitialValue = default) : base(context, logger, name)
         {
             _getInitialValue = getInitialValue;
         }
@@ -124,6 +124,7 @@ namespace FofX.Stateful
             value.Initialize(this, key.ToString());
             value.PostInitialize();
             _dictionary.Add(key, value);
+            LogOperation(OpType.Add, key, value);
             return value;
         }
 
@@ -136,6 +137,8 @@ namespace FofX.Stateful
                 return false;
 
             _dictionary.Remove(key);
+            LogOperation(OpType.Remove, key, value);
+
             value.Dispose();
 
             return true;
@@ -178,6 +181,8 @@ namespace FofX.Stateful
                 foreach (var kvp in _getInitialValue())
                     _dictionary.Add(kvp.Key, kvp.Value);
             }
+
+            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
 
         public void CopyTo(IStateDictionary<TKey, TValue> copyTo)

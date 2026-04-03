@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-
+using Codice.CM.Common.Checkin.Partial.DifferencesApplier;
 using ObserveThing;
 
 namespace FofX.Stateful
@@ -76,6 +76,7 @@ namespace FofX.Stateful
         string nodePath { get; }
         SynchronizationContext context { get; }
         IStateNode root { get; }
+        ILogger logger { get; }
         IStateNode parent { get; }
         IEnumerable<IStateNode> children { get; }
         int childCount { get; }
@@ -99,6 +100,7 @@ namespace FofX.Stateful
         public string nodePath { get; private set; }
         public SynchronizationContext context { get; private set; }
         public IStateNode root { get; private set; }
+        public ILogger logger { get; private set; }
         public IStateNode parent { get; private set; }
         public abstract IEnumerable<IStateNode> children { get; }
         public abstract int childCount { get; }
@@ -108,10 +110,11 @@ namespace FofX.Stateful
 
         public StateNode() { }
 
-        public StateNode(SynchronizationContext context, string name = "root")
+        public StateNode(SynchronizationContext context, ILogger logger, string name = "root")
         {
             this.context = context;
             root = this;
+            this.logger = logger;
             nodeName = name;
             nodePath = name;
             InitializeInternal();
@@ -130,6 +133,7 @@ namespace FofX.Stateful
             context = parent.context;
             root = parent.root;
             this.parent = parent;
+            logger = parent.logger;
             nodeName = name;
             nodePath = $"{parent.nodePath}/{nodeName}";
             InitializeInternal();
@@ -223,6 +227,13 @@ namespace FofX.Stateful
             disposed = true;
 
             DisposeInternal();
+
+            LogOperation(OpType.Dispose);
+        }
+
+        protected void LogOperation(OpType opType, object param = default, IStateNode child = default, LogLevel logLevel = LogLevel.Trace)
+        {
+            logger.Generic(logLevel, $"{opType} {nodePath} param={param?.ToString() ?? "null"} child={child?.nodeName ?? "null"}");
         }
     }
 }

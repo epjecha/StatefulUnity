@@ -74,7 +74,7 @@ namespace FofX.Stateful
             _getInitialValue = getInitialValue;
         }
 
-        public StateList(SynchronizationContext context, string name = "root", Func<T[]> getInitialValue = default) : base(context, name)
+        public StateList(SynchronizationContext context, ILogger logger, string name = "root", Func<T[]> getInitialValue = default) : base(context, logger, name)
         {
             _getInitialValue = getInitialValue;
         }
@@ -121,6 +121,8 @@ namespace FofX.Stateful
             for (int i = index + 1; i < _list.count; i++)
                 _list[i].Rename(i.ToString());
 
+            LogOperation(OpType.Add, index, element);
+
             return element;
         }
 
@@ -129,10 +131,11 @@ namespace FofX.Stateful
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            if (!_list.Remove(element))
+            var index = _list.IndexOf(element);
+            if (index == -1)
                 return false;
 
-            element.Dispose();
+            RemoveAt(index);
             return true;
         }
 
@@ -146,6 +149,8 @@ namespace FofX.Stateful
 
             for (int i = index; i < _list.count; i++)
                 _list[i].Rename(i.ToString());
+
+            LogOperation(OpType.Remove, index, element);
 
             element.Dispose();
         }
@@ -173,6 +178,8 @@ namespace FofX.Stateful
 
             if (_getInitialValue != null)
                 _list.AddRange(_getInitialValue());
+
+            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
 
         public void CopyTo(IStateList<T> copyTo)

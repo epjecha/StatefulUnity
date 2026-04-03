@@ -11,6 +11,9 @@ namespace FofX
 
         public void Generic(LogLevel logLevel, string message, Exception exception)
         {
+            if (!LevelEnabled(logLevel))
+                return;
+
             switch (logLevel)
             {
                 case LogLevel.Trace:
@@ -33,24 +36,51 @@ namespace FofX
         }
 
         public void Debug(string message)
-            => UnityEngine.Debug.Log($"<color=#00FFFF>[DEBUG]</color> {message}");
+        {
+            if (LevelEnabled(LogLevel.Debug))
+                UnityEngine.Debug.Log($"<color=#00FFFF>[DEBUG]</color> {message}");
+        }
 
         public void Error(string message)
-            => UnityEngine.Debug.LogError($"<color=#FF0000>[ERROR]</color> {message}");
+        {
+            if (LevelEnabled(LogLevel.Error))
+                UnityEngine.Debug.LogError($"<color=#FF0000>[ERROR]</color> {message}");
+        }
 
         public void Error(Exception exception)
-            => UnityEngine.Debug.LogError($"<color=#FF0000>[ERROR]</color> {exception}");
+        {
+            if (LevelEnabled(LogLevel.Error))
+                UnityEngine.Debug.LogError($"<color=#FF0000>[ERROR]</color> {exception}");
+        }
 
         public void Error(string message, Exception exception)
-            => UnityEngine.Debug.LogError($"<color=#FF0000>[ERROR]</color> Message: {message}\nException: {exception}");
+        {
+            if (LevelEnabled(LogLevel.Error))
+                UnityEngine.Debug.LogError($"<color=#FF0000>[ERROR]</color> Message: {message}\nException: {exception}");
+        }
+
+        public void Fatal(string message)
+        {
+            if (LevelEnabled(LogLevel.Fatal))
+                UnityEngine.Debug.LogError($"<color=#FF0000>[ERROR]</color> {message}");
+        }
 
         public void Info(string message)
-            => UnityEngine.Debug.Log($"<color=#00FF00>[INFO]</color> {message}");
+        {
+            if (LevelEnabled(LogLevel.Info))
+                UnityEngine.Debug.Log($"<color=#00FF00>[INFO]</color> {message}");
+        }
 
         public void Trace(string message)
-            => UnityEngine.Debug.Log($"[TRACE] {message}");
+        {
+            if (LevelEnabled(LogLevel.Trace))
+                UnityEngine.Debug.Log($"[TRACE] {message}");
+        }
 
         public void Warning(string message)
-            => UnityEngine.Debug.LogWarning($"<color=#FFFF00>[WARN]</color> Message: {message}");
+        {
+            if (LevelEnabled(LogLevel.Warn))
+                UnityEngine.Debug.LogWarning($"<color=#FFFF00>[WARN]</color> Message: {message}");
+        }
     }
 }

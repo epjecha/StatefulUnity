@@ -22,7 +22,7 @@ namespace FofX.Stateful
             PopulateChildren();
         }
 
-        public StateObject(SynchronizationContext context, string name = "root") : base(context, name)
+        public StateObject(SynchronizationContext context, ILogger logger, string name = "root") : base(context, logger, name)
         {
             PopulateChildren();
         }
@@ -70,6 +70,8 @@ namespace FofX.Stateful
 
         public override void Reset()
         {
+            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
+
             foreach (var child in children.Where(x => !x.derived))
                 child.Reset();
         }

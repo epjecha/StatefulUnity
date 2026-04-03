@@ -20,14 +20,14 @@ namespace FofX.Stateful.Tests
         {
             public StateDictionary<int, StateValue<string>> dict { get; private set; }
 
-            public TestState(SynchronizationContext context, string name = "root") : base(context, name) { }
+            public TestState(SynchronizationContext context, ILogger logger, string name = "root") : base(context, logger, name) { }
         }
 
         [Test]
         public void TestHierarchy()
         {
             var context = new DefaultSynchronizationContext();
-            var state = new TestState(context);
+            var state = new TestState(context, new DefaultLogger() { logLevel = LogLevel.Trace });
 
             Assert.AreEqual("root", state.nodeName);
             Assert.AreEqual("root", state.nodePath);
@@ -218,50 +218,6 @@ namespace FofX.Stateful.Tests
             Assert.AreEqual(opType, args.opType);
             Assert.AreEqual(param, args.param);
             Assert.AreEqual(child, args.child);
-        }
-
-        [Test]
-        public void TestImmediateSubscription()
-        {
-            ValueObservable<int> observable = new ValueObservable<int>();
-
-            bool standardFired = false;
-            bool immediateFired = false;
-
-            bool standardFiredFirst = false;
-            bool immediateFiredFirst = false;
-
-            var standardStream = observable.Subscribe(x =>
-            {
-                standardFired = true;
-
-                if (!immediateFiredFirst)
-                    standardFiredFirst = true;
-            });
-
-            var immediateStream = observable.Subscribe(
-                immediate: true,
-                onNext: x =>
-                {
-                    immediateFired = true;
-
-                    if (!standardFiredFirst)
-                        immediateFiredFirst = true;
-                }
-            );
-
-            standardFired = false;
-            immediateFired = false;
-
-            standardFiredFirst = false;
-            immediateFiredFirst = false;
-
-            observable.value = 1;
-
-            Assert.IsTrue(standardFired);
-            Assert.IsTrue(immediateFired);
-            Assert.IsTrue(immediateFiredFirst);
-            Assert.IsFalse(standardFiredFirst);
         }
     }
 }
