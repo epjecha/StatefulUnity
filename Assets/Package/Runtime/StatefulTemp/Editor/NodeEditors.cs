@@ -13,7 +13,7 @@ namespace FofX.Stateful
         public static void DrawObservableNodeInspector(IStateNode node, HashSet<string> showStatuses)
         {
             bool guiWasEnabled = GUI.enabled;
-            // GUI.enabled = !node.isDerived;
+            GUI.enabled = !node.derived;
 
             if (node is IStateValue value)
             {
