@@ -17,26 +17,37 @@ namespace FofX.Stateful
         Type valueType { get; }
         int count { get; }
         IStateNode this[object key] { get; }
+        IEnumerable keys { get; }
+        IEnumerable<IStateNode> values { get; }
         IStateNode Add(object key);
         bool Remove(object key);
         bool TryGetValue(object key, out IStateNode value);
+        IStateNode GetOrAdd(object key);
         void Clear();
     }
 
     public interface IStateDictionary<TKey, TValue> : IDictionaryObservable<TKey, TValue>, IStateDictionary, IEnumerable<KeyValuePair<TKey, TValue>> where TValue : IStateNode, new()
     {
         TValue this[TKey key] { get; }
+        new IEnumerable<TKey> keys { get; }
+        new IEnumerable<TValue> values { get; }
         TValue Add(TKey key);
         bool Remove(TKey key);
         bool TryGetValue(TKey key, out TValue value);
+        TValue GetOrAdd(TKey key);
 
         Type IStateDictionary.keyType => typeof(TKey);
         Type IStateDictionary.valueType => typeof(TValue);
         IStateNode IStateDictionary.this[object key] => this[(TKey)key];
+        IEnumerable IStateDictionary.keys => keys;
+        IEnumerable<IStateNode> IStateDictionary.values => values.Cast<IStateNode>();
+
         IStateNode IStateDictionary.Add(object key)
             => Add((TKey)key);
+
         bool IStateDictionary.Remove(object key)
             => Remove((TKey)key);
+
         bool IStateDictionary.TryGetValue(object key, out IStateNode value)
         {
             if (TryGetValue((TKey)key, out TValue v))
@@ -48,12 +59,19 @@ namespace FofX.Stateful
             value = default;
             return false;
         }
+
+        IStateNode IStateDictionary.GetOrAdd(object key)
+            => GetOrAdd((TKey)key);
     }
 
     public class StateDictionary<TKey, TValue> : StateNode, IStateDictionary<TKey, TValue> where TValue : IStateNode, new()
     {
         public int count => _dictionary.count;
         public TValue this[TKey index] => _dictionary[index];
+        public IEnumerable<TKey> keys => _dictionary.keys;
+        public IEnumerable<TValue> values => _dictionary.values;
+        public override int childCount => _dictionary.count;
+        public override IEnumerable<IStateNode> children => _dictionary.Select(x => (IStateNode)x.Value);
         public override bool derived => _deriveStream != null;
         private IDisposable _deriveStream;
 
@@ -94,6 +112,9 @@ namespace FofX.Stateful
             return child != null;
         }
 
+        protected override void CopyToInternal(IStateNode copyTo)
+            => CopyTo((IStateDictionary<TKey, TValue>)copyTo);
+
         public TValue Add(TKey key)
         {
             if (derived)
@@ -129,6 +150,14 @@ namespace FofX.Stateful
         public bool TryGetValue(TKey key, out TValue value)
             => _dictionary.TryGetValue(key, out value);
 
+        public TValue GetOrAdd(TKey key)
+        {
+            if (_dictionary.TryGetValue(key, out var value))
+                return value;
+
+            return Add(key);
+        }
+
         public void Clear()
         {
             if (derived)
@@ -149,6 +178,17 @@ namespace FofX.Stateful
                 foreach (var kvp in _getInitialValue())
                     _dictionary.Add(kvp.Key, kvp.Value);
             }
+        }
+
+        public void CopyTo(IStateDictionary<TKey, TValue> copyTo)
+        {
+            var toRemove = copyTo.keys.Except(keys).ToArray();
+
+            foreach (var keyToRemove in toRemove)
+                copyTo.Remove(keyToRemove);
+
+            foreach (var kvpToCopy in _dictionary)
+                kvpToCopy.Value.CopyTo(copyTo.GetOrAdd(kvpToCopy.Key));
         }
 
         public IDisposable Subscribe(IDictionaryObserver<TKey, TValue> observer)

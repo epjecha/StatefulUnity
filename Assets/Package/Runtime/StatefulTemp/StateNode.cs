@@ -194,15 +194,18 @@ namespace FofX.Stateful
 
         protected abstract bool TryGetChildInternal(string childName, out IStateNode child);
         protected abstract IStateNode GetChildInternal(string childName);
+        protected abstract void CopyToInternal(IStateNode copyTo);
 
         public abstract void Reset();
-        public abstract void CopyTo(IStateNode copyTo);
 
         public abstract IDisposable Subscribe(IStateOpObserver observer);
         public abstract IDisposable Subscribe(IObserver observer);
 
         public abstract string ToJSON(Func<IStateNode, bool> filter);
         public abstract void FromJSON(string json);
+
+        void IStateNode.CopyTo(IStateNode copyTo)
+            => CopyToInternal(copyTo);
 
         void IStateNode.Rename(string newName)
         {

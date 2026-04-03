@@ -10,22 +10,12 @@ namespace FofX.Stateful
 {
     public class StateObject : StateNode
     {
-        private class StateObjectObservable : ObservableBase<IObserver, bool>
-        {
-            public StateObjectObservable(SynchronizationContext context) : base(context) { }
-
-            public IDisposable Subscribe(IObserver observer)
-                => AddObserver(observer);
-
-            protected override void NotifyObserver(IObserver observer, bool data) { }
-        }
-
         public override int childCount => _children.Count;
         public override IEnumerable<IStateNode> children => _children.Values;
         public override bool derived => false;
 
         private Dictionary<string, IStateNode> _children = new Dictionary<string, IStateNode>();
-        private StateObjectObservable _observable;
+        private SynchronizedNotificationQueue<IStateOpObserver, bool> _observable;
 
         public StateObject() : base()
         {
@@ -66,7 +56,7 @@ namespace FofX.Stateful
 
         protected override void InitializeInternal()
         {
-            _observable = new StateObjectObservable(context);
+            _observable = new SynchronizedNotificationQueue<IStateOpObserver, bool>((_, _) => { }, context);
         }
 
         protected override IStateNode GetChildInternal(string childName)
@@ -75,14 +65,14 @@ namespace FofX.Stateful
         protected override bool TryGetChildInternal(string childName, out IStateNode child)
             => _children.TryGetValue(childName, out child);
 
+        protected override void CopyToInternal(IStateNode copyTo)
+            => CopyTo((StateObject)copyTo);
+
         public override void Reset()
         {
             foreach (var child in children.Where(x => !x.derived))
                 child.Reset();
         }
-
-        public override void CopyTo(IStateNode copyTo)
-            => CopyTo((StateObject)copyTo);
 
         public void CopyTo(StateObject copyTo)
         {
@@ -122,11 +112,15 @@ namespace FofX.Stateful
         }
 
         public override IDisposable Subscribe(IObserver observer)
-            => _observable.Subscribe(observer);
+            => Subscribe(new StateOpObserver(
+                onOperation: _ => observer.OnChange(),
+                onError: observer.OnError,
+                onDispose: observer.OnDispose
+            ));
 
         public override IDisposable Subscribe(IStateOpObserver observer)
-            => Subscribe(new Observer(
-                onChange: null,
+            => _observable.AddObserver(new StateOpObserver(
+                onOperation: observer.OnOperation,
                 onError: observer.OnError,
                 onDispose: () =>
                 {

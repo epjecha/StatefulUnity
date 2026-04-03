@@ -12,6 +12,8 @@ namespace FofX.Stateful
     {
         object value { get; set; }
         Type valueType { get; }
+
+        void CopyTo(IStateValue copyTo);
     }
 
     public interface IStateValue<T> : IValueObservable<T>, IStateValue
@@ -25,6 +27,11 @@ namespace FofX.Stateful
         }
 
         Type IStateValue.valueType => typeof(T);
+
+        void CopyTo(IStateValue<T> copyTo);
+
+        void IStateValue.CopyTo(IStateValue copyTo)
+            => CopyTo((IStateValue<T>)copyTo);
     }
 
     public class StateValue<T> : StateNode, IStateValue<T>
@@ -83,12 +90,20 @@ namespace FofX.Stateful
             return false;
         }
 
+        protected override void CopyToInternal(IStateNode copyTo)
+            => CopyTo((IStateValue<T>)copyTo);
+
         public override void Reset()
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
             _value.value = _getInitialValue == null ? default : _getInitialValue();
+        }
+
+        public void CopyTo(IStateValue<T> copyTo)
+        {
+            copyTo.value = value;
         }
 
         public IDisposable Subscribe(IValueObserver<T> observer)

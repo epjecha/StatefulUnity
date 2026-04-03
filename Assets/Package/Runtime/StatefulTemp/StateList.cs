@@ -101,6 +101,9 @@ namespace FofX.Stateful
             return true;
         }
 
+        protected override void CopyToInternal(IStateNode copyTo)
+            => CopyTo((IStateList<T>)copyTo);
+
         public T Add()
             => Insert(_list.count);
 
@@ -162,9 +165,6 @@ namespace FofX.Stateful
             if (_getInitialValue != null)
                 _list.AddRange(_getInitialValue());
         }
-
-        public override void CopyTo(IStateNode copyTo)
-            => CopyTo((IStateList<T>)copyTo);
 
         public void CopyTo(IStateList<T> copyTo)
         {

@@ -1,12 +1,14 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 
 using FofX.Serialization;
 
 using ObserveThing;
 
 using SimpleJSON;
+using UnityEditorInternal;
 
 namespace FofX.Stateful
 {
@@ -18,6 +20,7 @@ namespace FofX.Stateful
         bool Remove(object element);
         bool Contains(object element);
         void Clear();
+        void CopyTo(IStateList copyTo);
     }
 
     public interface IStateValueSet<T> : ISetObservable<T>, IStateValueSet, IEnumerable<T>
@@ -26,6 +29,7 @@ namespace FofX.Stateful
         bool Add(T element);
         bool Remove(T element);
         bool Contains(T element);
+        void CopyTo(IStateValueSet<T> copyTo);
 
         bool IStateValueSet.Add(object element)
             => Add((T)element);
@@ -35,6 +39,9 @@ namespace FofX.Stateful
 
         bool IStateValueSet.Contains(object element)
             => Contains((T)element);
+
+        void IStateValueSet.CopyTo(IStateList copyTo)
+            => CopyTo((IStateValueSet<T>)copyTo);
     }
 
     public class StateValueSet<T> : StateNode, IStateValueSet<T>
@@ -88,6 +95,9 @@ namespace FofX.Stateful
             return false;
         }
 
+        protected override void CopyToInternal(IStateNode copyTo)
+            => CopyTo((IStateValueSet<T>)copyTo);
+
         public bool Add(T element)
         {
             if (derived)
@@ -124,6 +134,15 @@ namespace FofX.Stateful
 
             if (_getInitialValue != null)
                 _set.AddRange(_getInitialValue());
+        }
+
+        public void CopyTo(IStateValueSet<T> copyTo)
+        {
+            foreach (var toRemove in copyTo.Except(_set).ToArray())
+                copyTo.Remove(toRemove);
+
+            foreach (var toAdd in _set.Except(copyTo).ToArray())
+                copyTo.Add(toAdd);
         }
 
         public IDisposable Subscribe(ISetObserver<T> observer)
