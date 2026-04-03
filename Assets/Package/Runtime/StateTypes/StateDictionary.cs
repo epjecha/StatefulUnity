@@ -121,6 +121,10 @@ namespace FofX.Stateful
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
             TValue value = new TValue();
+
+            if (value is IKeyedStateNode<TKey> keyedNode)
+                keyedNode.AssignKey(key);
+
             value.Initialize(this, key.ToString());
             value.PostInitialize();
             _dictionary.Add(key, value);

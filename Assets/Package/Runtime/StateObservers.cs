@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using ObserveThing;
 
 namespace FofX.Stateful
 {
@@ -8,11 +10,23 @@ namespace FofX.Stateful
         public static IDisposable Subscribe(this IStateNode target, Action<StateOpArgs> onOperation = default, Action<Exception> onError = default, Action onDispose = default)
             => target.Subscribe(new StateOpObserver(onOperation, onError, onDispose));
 
+        public static IDisposable Subscribe(Action<StateOpArgs> onOperation = default, Action<Exception> onError = default, Action onDispose = default, params IStateNode[] nodes)
+        {
+            var observer = new StateOpObserver(onOperation, onError, onDispose);
+            return new ComposedDisposable(nodes.Select(x => x.Subscribe(observer)).ToArray());
+        }
+
         public static IDisposable SubscribeAll(this IStateNode target, Action<StateOpArgs> onOperation = default, Action<Exception> onError = default, Action onDispose = default, bool muteInitializations = true)
             => target.SubscribeAll(new StateOpObserver(onOperation, onError, onDispose), muteInitializations);
 
         public static IDisposable SubscribeAll(this IStateNode target, StateOpObserver observer, bool muteInitializations = true)
             => new SubscribeRecursive(target, observer, muteInitializations);
+
+        public static IDisposable SubscribeAll(Action<StateOpArgs> onOperation = default, Action<Exception> onError = default, Action onDispose = default, bool muteInitializations = true, params IStateNode[] nodes)
+        {
+            var observer = new StateOpObserver(onOperation, onError, onDispose);
+            return new ComposedDisposable(nodes.Select(x => x.SubscribeAll(observer, muteInitializations)).ToArray());
+        }
 
         private class SubscribeRecursive : IDisposable
         {

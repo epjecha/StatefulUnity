@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using UnityEngine;
 
 using FofX.Stateful;
@@ -26,11 +25,10 @@ namespace FofX
 
         protected abstract void InitializeState(T state);
 
-        public static void ExecuteTransaction(Action transaction)
+        public static void ExecuteTransaction(params StateTransaction<T>[] transactions)
         {
-            state.context.PauseExecution();
-            transaction();
-            state.context.ResumeExecution();
+            foreach (var transaction in transactions)
+                transaction.ExecuteTransaction(state);
         }
     }
 }
