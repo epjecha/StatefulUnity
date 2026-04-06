@@ -30,5 +30,12 @@ namespace FofX
             foreach (var transaction in transactions)
                 transaction.ExecuteTransaction(state);
         }
+
+        public static void ExecuteTransaction(Action<T> transaction)
+        {
+            state.context.PauseExecution();
+            transaction(state);
+            state.context.ResumeExecution();
+        }
     }
 }
