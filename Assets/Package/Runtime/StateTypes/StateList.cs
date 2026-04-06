@@ -74,11 +74,6 @@ namespace FofX.Stateful
             _getInitialValue = getInitialValue;
         }
 
-        public StateList(SynchronizationContext context, ILogger logger, string name = "root", Func<T[]> getInitialValue = default) : base(context, logger, name)
-        {
-            _getInitialValue = getInitialValue;
-        }
-
         protected override void InitializeInternal()
         {
             _list = _getInitialValue == null ?

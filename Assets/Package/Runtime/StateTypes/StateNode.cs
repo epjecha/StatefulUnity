@@ -109,7 +109,7 @@ namespace FofX.Stateful
 
         public StateNode() { }
 
-        public StateNode(SynchronizationContext context, ILogger logger, string name = "root")
+        public void Initialize(SynchronizationContext context, ILogger logger, string name = "root")
         {
             this.context = context;
             root = this;

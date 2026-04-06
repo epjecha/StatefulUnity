@@ -17,18 +17,12 @@ namespace FofX.Stateful
         private Dictionary<string, IStateNode> _children = new Dictionary<string, IStateNode>();
         private SynchronizedNotificationQueue<IStateOpObserver, bool> _observable;
 
-        public StateObject() : base()
-        {
-            PopulateChildren();
-        }
+        public StateObject() : base() { }
 
-        public StateObject(SynchronizationContext context, ILogger logger, string name = "root") : base(context, logger, name)
+        protected override void InitializeInternal()
         {
-            PopulateChildren();
-        }
+            _observable = new SynchronizedNotificationQueue<IStateOpObserver, bool>((_, _) => { }, context);
 
-        private void PopulateChildren()
-        {
             var type = GetType();
             while (type != typeof(StateObject))
             {
@@ -52,11 +46,6 @@ namespace FofX.Stateful
 
                 type = type.BaseType;
             }
-        }
-
-        protected override void InitializeInternal()
-        {
-            _observable = new SynchronizedNotificationQueue<IStateOpObserver, bool>((_, _) => { }, context);
         }
 
         protected override IStateNode GetChildInternal(string childName)

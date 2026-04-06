@@ -19,15 +19,15 @@ namespace FofX.Stateful.Tests
         public class TestState : StateObject
         {
             public StateDictionary<int, StateValue<string>> dict { get; private set; }
-
-            public TestState(SynchronizationContext context, ILogger logger, string name = "root") : base(context, logger, name) { }
         }
 
         [Test]
         public void TestHierarchy()
         {
             var context = new DefaultSynchronizationContext();
-            var state = new TestState(context, new DefaultLogger() { logLevel = LogLevel.Trace });
+            var state = new TestState();
+
+            state.Initialize(context, new DefaultLogger() { logLevel = LogLevel.Trace });
 
             Assert.AreEqual("root", state.nodeName);
             Assert.AreEqual("root", state.nodePath);
