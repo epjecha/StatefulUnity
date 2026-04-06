@@ -5,7 +5,7 @@ using FofX.Stateful;
 
 namespace FofX
 {
-    public abstract class AppBase<T> : MonoBehaviour where T : IStateNode, new()
+    public abstract class AppBase<T> : MonoBehaviour where T : IStateNode
     {
         public static T state { get; private set; }
         private static AppBase<T> _instance;
@@ -19,11 +19,10 @@ namespace FofX
             }
 
             _instance = this;
-            state = new T();
-            InitializeState(state);
+            state = ConstructState();
         }
 
-        protected abstract void InitializeState(T state);
+        protected abstract T ConstructState();
 
         public static void ExecuteTransaction(params StateTransaction<T>[] transactions)
         {
