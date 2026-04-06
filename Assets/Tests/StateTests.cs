@@ -219,5 +219,28 @@ namespace FofX.Stateful.Tests
             Assert.AreEqual(param, args.param);
             Assert.AreEqual(child, args.child);
         }
+
+        [Test]
+        public void TestStateValueArray()
+        {
+            var array = new StateValueArray<int>();
+            array.Initialize(SynchronizationContext.Default, new DefaultLogger() { logLevel = LogLevel.Debug }, "root");
+
+            int callCount = 0;
+            IReadOnlyList<int> value = default;
+
+            var stream = array.Subscribe(
+                x =>
+                {
+                    callCount++;
+                    value = x;
+                }
+            );
+
+            array.SetValue(new int[] { 1, 2, 3 });
+
+            Assert.AreEqual(2, callCount);
+            Assert.AreEqual(new int[] { 1, 2, 3 }, value);
+        }
     }
 }

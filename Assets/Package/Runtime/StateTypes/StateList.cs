@@ -77,7 +77,7 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _list = _getInitialValue == null ?
-                new ListObservable<T>(parent.context) : new ListObservable<T>(_getInitialValue.Invoke(), parent.context);
+                new ListObservable<T>(context) : new ListObservable<T>(_getInitialValue.Invoke(), context);
         }
 
         protected override IStateNode GetChildInternal(string childName)

@@ -95,7 +95,7 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _dictionary = _getInitialValue == null ?
-                new DictionaryObservable<TKey, TValue>(parent.context) : new DictionaryObservable<TKey, TValue>(_getInitialValue(), parent.context);
+                new DictionaryObservable<TKey, TValue>(context) : new DictionaryObservable<TKey, TValue>(_getInitialValue(), context);
         }
 
         protected override IStateNode GetChildInternal(string childName)

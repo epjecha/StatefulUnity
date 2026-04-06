@@ -8,7 +8,7 @@ using FofX.Serialization;
 
 namespace FofX.Stateful
 {
-    public interface IStateValue : IObservable, IStateNode
+    public interface IStateValue : IStateNode
     {
         object value { get; set; }
         Type valueType { get; }
@@ -76,7 +76,7 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _value = _getInitialValue == null ?
-                new ValueObservable<T>(parent.context) : new ValueObservable<T>(_getInitialValue(), parent.context);
+                new ValueObservable<T>(context) : new ValueObservable<T>(_getInitialValue(), context);
         }
 
         protected override IStateNode GetChildInternal(string childName)

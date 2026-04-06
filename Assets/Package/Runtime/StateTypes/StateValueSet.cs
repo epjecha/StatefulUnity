@@ -8,7 +8,6 @@ using FofX.Serialization;
 using ObserveThing;
 
 using SimpleJSON;
-using UnityEditorInternal;
 
 namespace FofX.Stateful
 {
@@ -77,7 +76,7 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _set = _getInitialValue == null ?
-                new SetObservable<T>(parent.context) : new SetObservable<T>(_getInitialValue(), parent.context);
+                new SetObservable<T>(context) : new SetObservable<T>(_getInitialValue(), context);
         }
 
         protected override IStateNode GetChildInternal(string childName)
