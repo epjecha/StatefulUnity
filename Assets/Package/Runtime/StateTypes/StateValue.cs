@@ -125,12 +125,12 @@ namespace FofX.Stateful
                 }
             ));
 
-        public override string ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             return JSONSerialization.ToJSON(value);
         }
 
-        public override void FromJSON(string json)
+        public override void FromJSON(JSONNode json)
         {
             if (json == null)
             {
@@ -138,9 +138,7 @@ namespace FofX.Stateful
                 return;
             }
 
-            var data = JSONNode.Parse(json);
-
-            value = JSONSerialization.FromJSON<T>(data);
+            value = JSONSerialization.FromJSON<T>(json);
         }
 
         protected override void DisposeInternal()

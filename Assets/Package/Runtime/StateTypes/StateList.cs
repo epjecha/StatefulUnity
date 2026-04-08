@@ -212,7 +212,7 @@ namespace FofX.Stateful
                 }
             ));
 
-        public override void FromJSON(string json)
+        public override void FromJSON(JSONNode json)
         {
             if (json == null)
             {
@@ -220,7 +220,7 @@ namespace FofX.Stateful
                 return;
             }
 
-            JSONArray array = (JSONArray)JSONNode.Parse(json);
+            JSONArray array = (JSONArray)json;
 
             while (count > array.Count)
                 RemoveAt(count - 1);
@@ -232,7 +232,7 @@ namespace FofX.Stateful
                 _list[i].FromJSON(array[i]);
         }
 
-        public override string ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             JSONArray array = new JSONArray();
 

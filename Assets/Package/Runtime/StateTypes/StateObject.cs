@@ -78,7 +78,7 @@ namespace FofX.Stateful
             }
         }
 
-        public override void FromJSON(string json)
+        public override void FromJSON(JSONNode json)
         {
             if (json == null)
             {
@@ -86,13 +86,11 @@ namespace FofX.Stateful
                 return;
             }
 
-            var obj = JSONNode.Parse(json);
-
             foreach (var child in children)
-                child.FromJSON(obj[child.nodeName]);
+                child.FromJSON(json[child.nodeName]);
         }
 
-        public override string ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             JSONObject obj = new JSONObject();
 

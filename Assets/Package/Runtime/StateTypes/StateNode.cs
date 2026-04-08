@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ObserveThing;
+using SimpleJSON;
 
 namespace FofX.Stateful
 {
@@ -86,8 +87,8 @@ namespace FofX.Stateful
         void PostInitialize();
         void Reset();
         void CopyTo(IStateNode copyTo);
-        string ToJSON(Func<IStateNode, bool> filter);
-        void FromJSON(string json);
+        JSONNode ToJSON(Func<IStateNode, bool> filter);
+        void FromJSON(JSONNode json);
         void Rename(string name);
         IStateNode GetChild(string name);
         bool TryFindChild(string name, out IStateNode child);
@@ -206,8 +207,8 @@ namespace FofX.Stateful
         public abstract IDisposable Subscribe(IStateOpObserver observer);
         public abstract IDisposable Subscribe(IObserver observer);
 
-        public abstract string ToJSON(Func<IStateNode, bool> filter);
-        public abstract void FromJSON(string json);
+        public abstract JSONNode ToJSON(Func<IStateNode, bool> filter);
+        public abstract void FromJSON(JSONNode json);
 
         void IStateNode.CopyTo(IStateNode copyTo)
             => CopyToInternal(copyTo);

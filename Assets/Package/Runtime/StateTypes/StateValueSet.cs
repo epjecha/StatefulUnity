@@ -167,7 +167,7 @@ namespace FofX.Stateful
                 }
             ));
 
-        public override void FromJSON(string json)
+        public override void FromJSON(JSONNode json)
         {
             if (json == null)
             {
@@ -175,7 +175,7 @@ namespace FofX.Stateful
                 return;
             }
 
-            JSONArray array = (JSONArray)JSONNode.Parse(json);
+            JSONArray array = (JSONArray)json;
             SerializationPair<T> serializer = JSONSerialization.GetSerializer<T>();
 
             Clear();
@@ -184,7 +184,7 @@ namespace FofX.Stateful
                 Add(serializer.fromJSON(value));
         }
 
-        public override string ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             JSONArray array = new JSONArray();
             SerializationPair<T> serializer = JSONSerialization.GetSerializer<T>();

@@ -150,7 +150,7 @@ namespace FofX.Stateful
             );
         }
 
-        public override string ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             if (_value.value == null)
                 return JSONNull.CreateOrGet();
@@ -164,18 +164,16 @@ namespace FofX.Stateful
             return json;
         }
 
-        public override void FromJSON(string json)
+        public override void FromJSON(JSONNode json)
         {
-            var data = JSONNode.Parse(json);
-
-            if (data.IsNull)
+            if (json.IsNull)
             {
                 _value.value = null;
                 return;
             }
 
             var serializer = JSONSerialization.GetSerializer<T>();
-            SetValueInternal(((JSONArray)data).Linq.Select(x => serializer.fromJSON(x)));
+            SetValueInternal(((JSONArray)json).Linq.Select(x => serializer.fromJSON(x)));
         }
     }
 }
