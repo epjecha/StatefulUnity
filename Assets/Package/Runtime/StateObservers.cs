@@ -60,9 +60,6 @@ namespace FofX.Stateful
 
             private void HandleOperation(StateOpArgs args)
             {
-                if (_initializing && _muteInitializations)
-                    return;
-
                 if (args.opType == OpType.Add)
                 {
                     if (args.child != null)
@@ -78,6 +75,9 @@ namespace FofX.Stateful
                     Dispose();
                 }
 
+                if (_initializing && _muteInitializations)
+                    return;
+
                 _observer.OnOperation(args);
             }
 
@@ -85,14 +85,16 @@ namespace FofX.Stateful
             {
                 bool wasInitializing = _initializing;
                 _initializing = true;
+
                 _streams.Add(node, node.Subscribe(_internalObserver));
-                _initializing = wasInitializing;
 
                 if (node is StateObject) //collections will automatically send Adds for all their elements
                 {
                     foreach (var child in node.children)
                         SubscribeToNode(child);
                 }
+
+                _initializing = wasInitializing;
             }
 
             private void UnsubscribeFromNode(IStateNode node)
