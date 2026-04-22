@@ -33,9 +33,7 @@ namespace FofX
 
         public static void ExecuteTransaction(Action<T> transaction)
         {
-            state.context.PauseExecution();
-            transaction(state);
-            state.context.ResumeExecution();
+            state.context.ExecuteBatchOperation(() => transaction(state));
         }
     }
 }

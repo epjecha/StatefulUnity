@@ -64,7 +64,7 @@ namespace FofX.Stateful
             => GetOrAdd((TKey)key);
     }
 
-    public class StateDictionary<TKey, TValue> : StateNode, IStateDictionary<TKey, TValue> where TValue : IStateNode, new()
+    public class StateDictionary<TKey, TValue> : StateNode<KeyValuePair<TKey, TValue>>, IStateDictionary<TKey, TValue> where TValue : IStateNode, new()
     {
         public int count => _dictionary.count;
         public TValue this[TKey index] => _dictionary[index];
@@ -96,6 +96,25 @@ namespace FofX.Stateful
         {
             _dictionary = _getInitialValue == null ?
                 new DictionaryObservable<TKey, TValue>(context) : new DictionaryObservable<TKey, TValue>(_getInitialValue(), context);
+
+            _dictionary.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        private void HandleInternalOperation(IReadOnlyList<DictionaryOpArgs<TKey, TValue>> ops)
+        {
+            if (ops == null)
+                return;
+
+            foreach (var op in ops)
+            {
+                EnqueuePendingOperation(new StateOpArgs<KeyValuePair<TKey, TValue>>(
+                    source: this,
+                    opType: op.isRemove ? OpType.Remove : OpType.Add,
+                    param: op.kvp,
+                    collectionElementId: op.id,
+                    child: op.kvp.Value
+                ));
+            }
         }
 
         protected override IStateNode GetChildInternal(string childName)
@@ -196,26 +215,69 @@ namespace FofX.Stateful
         }
 
         public IDisposable Subscribe(IDictionaryObserver<TKey, TValue> observer)
-            => _dictionary.Subscribe(observer);
+            => Subscribe(new Observer<StateOpArgs<KeyValuePair<TKey, TValue>>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        int index = 0;
+                        foreach (var pair in _dictionary.ElementsWithIds)
+                        {
+                            observer.OnAdd(pair.id, pair.element);
+                            index++;
+                        }
+
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (op.opType == OpType.Add)
+                        {
+                            observer.OnAdd(op.collectionElementId, op.param);
+                        }
+                        else if (op.opType == OpType.Remove)
+                        {
+                            observer.OnRemove(op.collectionElementId, op.param);
+                        }
+                    }
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
 
         public IDisposable Subscribe(ICollectionObserver<KeyValuePair<TKey, TValue>> observer)
-            => _dictionary.Subscribe(observer);
-
-        public override IDisposable Subscribe(IObserver observer)
-            => _dictionary.Subscribe(observer);
-
-        public override IDisposable Subscribe(IStateOpObserver observer)
-            => _dictionary.Subscribe(new DictionaryObserver<TKey, TValue>(
-                onAdd: (_, kvp) => observer.OnOperation(new StateOpArgs() { opType = OpType.Add, param = kvp.Key, child = kvp.Value, source = this }),
-                onRemove: (_, kvp) => observer.OnOperation(new StateOpArgs() { opType = OpType.Remove, param = kvp.Key, child = kvp.Value, source = this }),
-                onError: observer.OnError,
-                onDispose: () =>
+            => Subscribe(new Observer<StateOpArgs<KeyValuePair<TKey, TValue>>>(
+                onOperation: ops =>
                 {
-                    if (disposed)
-                        observer.OnOperation(new StateOpArgs() { opType = OpType.Dispose, source = this });
+                    if (ops == null)
+                    {
+                        int index = 0;
+                        foreach (var pair in _dictionary.ElementsWithIds)
+                        {
+                            observer.OnAdd(pair.id, pair.element);
+                            index++;
+                        }
 
-                    observer.OnDispose();
-                }
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (op.opType == OpType.Add)
+                        {
+                            observer.OnAdd(op.collectionElementId, op.param);
+                        }
+                        else if (op.opType == OpType.Remove)
+                        {
+                            observer.OnRemove(op.collectionElementId, op.param);
+                        }
+                    }
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
             ));
 
         public override void FromJSON(JSONNode json)

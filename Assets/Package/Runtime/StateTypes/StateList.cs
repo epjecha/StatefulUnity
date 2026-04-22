@@ -49,7 +49,7 @@ namespace FofX.Stateful
             => CopyTo(copyTo);
     }
 
-    public class StateList<T> : StateNode, IStateList<T> where T : IStateNode, new()
+    public class StateList<T> : StateNode<T>, IStateList<T> where T : IStateNode, new()
     {
         public int count => _list.count;
         public T this[int index] => _list[index];
@@ -77,7 +77,27 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _list = _getInitialValue == null ?
-                new ListObservable<T>(context) : new ListObservable<T>(_getInitialValue.Invoke(), context);
+                new ListObservable<T>(context) : new ListObservable<T>(context, _getInitialValue());
+
+            _list.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        private void HandleInternalOperation(IReadOnlyList<ListOpArgs<T>> ops)
+        {
+            if (ops == null)
+                return;
+
+            foreach (var op in ops)
+            {
+                EnqueuePendingOperation(new StateOpArgs<T>(
+                    source: this,
+                    opType: op.isRemove ? OpType.Remove : OpType.Add,
+                    param: op.element,
+                    collectionElementId: op.id,
+                    index: op.index,
+                    child: op.element
+                ));
+            }
         }
 
         protected override IStateNode GetChildInternal(string childName)
@@ -98,6 +118,72 @@ namespace FofX.Stateful
 
         protected override void CopyToInternal(IStateNode copyTo)
             => CopyTo((IStateList<T>)copyTo);
+
+        public IDisposable Subscribe(IListObserver<T> observer)
+            => Subscribe(new Observer<StateOpArgs<T>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        int index = 0;
+                        foreach (var pair in _list.ElementsWithIds)
+                        {
+                            observer.OnAdd(pair.id, index, pair.element);
+                            index++;
+                        }
+
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (op.opType == OpType.Add)
+                        {
+                            observer.OnAdd(op.collectionElementId, op.index, op.param);
+                        }
+                        else if (op.opType == OpType.Remove)
+                        {
+                            observer.OnRemove(op.collectionElementId, op.index, op.param);
+                        }
+                    }
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
+
+        public IDisposable Subscribe(ICollectionObserver<T> observer)
+            => Subscribe(new Observer<StateOpArgs<T>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        int index = 0;
+                        foreach (var pair in _list.ElementsWithIds)
+                        {
+                            observer.OnAdd(pair.id, pair.element);
+                            index++;
+                        }
+
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (op.opType == OpType.Add)
+                        {
+                            observer.OnAdd(op.collectionElementId, op.param);
+                        }
+                        else if (op.opType == OpType.Remove)
+                        {
+                            observer.OnRemove(op.collectionElementId, op.param);
+                        }
+                    }
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
 
         public T Add()
             => Insert(_list.count);
@@ -127,6 +213,7 @@ namespace FofX.Stateful
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
             var index = _list.IndexOf(element);
+
             if (index == -1)
                 return false;
 
@@ -172,7 +259,10 @@ namespace FofX.Stateful
             _list.Clear();
 
             if (_getInitialValue != null)
-                _list.AddRange(_getInitialValue());
+            {
+                foreach (var element in _getInitialValue())
+                    _list.Add(element);
+            }
 
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
@@ -188,29 +278,6 @@ namespace FofX.Stateful
             for (int i = 0; i < count; i++)
                 _list[i].CopyTo(copyTo[i]);
         }
-
-        public IDisposable Subscribe(IListObserver<T> observer)
-            => _list.Subscribe(observer);
-
-        public IDisposable Subscribe(ICollectionObserver<T> observer)
-            => _list.Subscribe(observer);
-
-        public override IDisposable Subscribe(IObserver observer)
-            => _list.Subscribe(observer);
-
-        public override IDisposable Subscribe(IStateOpObserver observer)
-            => _list.Subscribe(new ListObserver<T>(
-                onAdd: (_, index, item) => observer.OnOperation(new StateOpArgs() { opType = OpType.Add, param = index, child = item, source = this }),
-                onRemove: (_, index, item) => observer.OnOperation(new StateOpArgs() { opType = OpType.Remove, param = index, child = item, source = this }),
-                onError: observer.OnError,
-                onDispose: () =>
-                {
-                    if (disposed)
-                        observer.OnOperation(new StateOpArgs() { opType = OpType.Dispose, source = this });
-
-                    observer.OnDispose();
-                }
-            ));
 
         public override void FromJSON(JSONNode json)
         {
@@ -251,26 +318,39 @@ namespace FofX.Stateful
             foreach (var child in children)
                 child.Dispose();
 
-            _list.Dispose();
             _deriveStream?.Dispose();
         }
 
         public void Derive(IListObservable<T> source)
         {
             _deriveStream = source.Subscribe(
-                onAdd: (index, item) =>
+                onAdd: (index, element) =>
                 {
-                    if (item.parent == null)
-                        item.Initialize(this, index.ToString());
+                    _list.Insert(index, element);
 
-                    _list.Add(item);
+                    if (element.parent != null)
+                        return;
+
+                    element.Initialize(this, index.ToString());
+                    element.PostInitialize();
+
+                    for (int i = index + 1; i < _list.count; i++)
+                        _list[i].Rename(i.ToString());
                 },
                 onRemove: (index, item) =>
                 {
+                    var element = _list[index];
                     _list.RemoveAt(index);
 
-                    if (item.parent == this)
-                        item.Dispose();
+                    if (element.parent != this)
+                        return;
+
+                    for (int i = index; i < _list.count; i++)
+                        _list[i].Rename(i.ToString());
+
+                    LogOperation(OpType.Remove, index, element);
+
+                    element.Dispose();
                 },
                 immediate: true
             );

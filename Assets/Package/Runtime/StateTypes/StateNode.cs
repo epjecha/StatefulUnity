@@ -14,12 +14,35 @@ namespace FofX.Stateful
         Dispose
     }
 
-    public struct StateOpArgs
+    public interface IStateOperation
     {
-        public IStateNode source;
-        public OpType opType;
-        public object param;
-        public IStateNode child;
+        IStateNode source { get; }
+        OpType opType { get; }
+        object param { get; }
+        uint collectionElementId { get; }
+        int index { get; }
+        IStateNode child { get; }
+        IStateOperation Clone();
+    }
+
+    public struct StateOpArgs<T>
+    {
+        public IStateNode source { get; }
+        public OpType opType { get; }
+        public T param { get; }
+        public uint collectionElementId { get; }
+        public int index { get; }
+        public IStateNode child { get; }
+
+        public StateOpArgs(IStateNode source, OpType opType, T param, uint collectionElementId = 0, int index = -1, IStateNode child = null)
+        {
+            this.source = source;
+            this.opType = opType;
+            this.param = param;
+            this.collectionElementId = collectionElementId;
+            this.index = index;
+            this.child = child;
+        }
 
         public override string ToString()
         {
@@ -27,54 +50,11 @@ namespace FofX.Stateful
         }
     }
 
-    public interface IStateOpObserver : IObserverBase
-    {
-        void OnOperation(StateOpArgs args);
-    }
-
-    public class StateOpObserver : IStateOpObserver
-    {
-        public bool immediate { get; private set; }
-        private Action<StateOpArgs> _onOperation;
-        private Action<Exception> _onError;
-        private Action _onDispose;
-
-        public StateOpObserver(Action<StateOpArgs> onOperation = default, Action<Exception> onError = default, Action onDispose = default, bool immediate = false)
-        {
-            _onOperation = onOperation;
-            _onError = onError;
-            _onDispose = onDispose;
-            this.immediate = immediate;
-        }
-
-        public void OnOperation(StateOpArgs opArgs)
-        {
-            try
-            {
-                _onOperation?.Invoke(opArgs);
-            }
-            catch (Exception exc)
-            {
-                OnError(exc);
-            }
-        }
-
-        public void OnError(Exception error) => (_onError ?? Observers.DefaultExceptionHandler)?.Invoke(error);
-
-        public void OnDispose()
-            => _onDispose?.Invoke();
-    }
-
-    public interface IStateOpObservable : IObservable
-    {
-        IDisposable Subscribe(IStateOpObserver observer);
-    }
-
-    public interface IStateNode : IStateOpObservable, IDisposable
+    public interface IStateNode : ObserveThing.IObservable<IStateOperation>, IDisposable
     {
         string nodeName { get; }
         string nodePath { get; }
-        SynchronizationContext context { get; }
+        ObservationContext context { get; }
         IStateNode root { get; }
         ILogger logger { get; }
         IStateNode parent { get; }
@@ -94,11 +74,33 @@ namespace FofX.Stateful
         bool TryFindChild(string name, out IStateNode child);
     }
 
-    public abstract class StateNode : IStateNode
+    public abstract class StateNode<T> : Observable<StateOpArgs<T>>, IStateNode
     {
+        private class StateOperation : IStateOperation
+        {
+            public IStateNode source { get; set; }
+            public OpType opType { get; set; }
+            public object param { get; set; }
+            public uint collectionElementId { get; set; }
+            public int index { get; set; }
+            public IStateNode child { get; set; }
+
+            public IStateOperation Clone()
+            {
+                return new StateOperation()
+                {
+                    source = source,
+                    opType = opType,
+                    param = param,
+                    collectionElementId = collectionElementId,
+                    index = index,
+                    child = child
+                };
+            }
+        }
+
         public string nodeName { get; private set; }
         public string nodePath { get; private set; }
-        public SynchronizationContext context { get; private set; }
         public IStateNode root { get; private set; }
         public ILogger logger { get; private set; }
         public IStateNode parent { get; private set; }
@@ -106,11 +108,13 @@ namespace FofX.Stateful
         public abstract int childCount { get; }
         public abstract bool derived { get; }
         public bool initialized { get; private set; }
-        public bool disposed { get; private set; }
 
-        public StateNode() { }
+        private Queue<StateOperation> _operationPool = new Queue<StateOperation>();
+        private List<StateOperation> _opList = new List<StateOperation>();
 
-        public void Initialize(SynchronizationContext context, ILogger logger, string name = "root")
+        public StateNode() : base(default) { }
+
+        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
         {
             this.context = context;
             root = this;
@@ -196,16 +200,16 @@ namespace FofX.Stateful
 
         protected virtual void InitializeInternal() { }
         protected virtual void PostInitializeInternal() { }
-        protected virtual void DisposeInternal() { }
+        protected override void DisposeInternal()
+        {
+            LogOperation(OpType.Dispose);
+        }
 
         protected abstract bool TryGetChildInternal(string childName, out IStateNode child);
         protected abstract IStateNode GetChildInternal(string childName);
         protected abstract void CopyToInternal(IStateNode copyTo);
 
         public abstract void Reset();
-
-        public abstract IDisposable Subscribe(IStateOpObserver observer);
-        public abstract IDisposable Subscribe(IObserver observer);
 
         public abstract JSONNode ToJSON(Func<IStateNode, bool> filter);
         public abstract void FromJSON(JSONNode json);
@@ -219,21 +223,46 @@ namespace FofX.Stateful
             nodePath = parent == null ? newName : $"{parent.nodePath}/{newName}";
         }
 
-        public void Dispose()
-        {
-            if (disposed)
-                return;
-
-            disposed = true;
-
-            DisposeInternal();
-
-            LogOperation(OpType.Dispose);
-        }
-
         protected void LogOperation(OpType opType, object param = default, IStateNode child = default, LogLevel logLevel = LogLevel.Trace)
         {
             logger.Generic(logLevel, $"{opType} {nodePath} param={param?.ToString() ?? "null"} child={child?.nodeName ?? "null"}");
         }
+
+        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer)
+            => Subscribe(new Observer<StateOpArgs<T>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        observer.OnOperation(null);
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (!_operationPool.TryDequeue(out var operation))
+                            operation = new StateOperation();
+
+                        operation.source = op.source;
+                        operation.opType = op.opType;
+                        operation.param = op.param;
+                        operation.collectionElementId = op.collectionElementId;
+                        operation.index = op.index;
+                        operation.child = op.child;
+
+                        _opList.Add(operation);
+                    }
+
+                    observer.OnOperation(_opList);
+
+                    foreach (var operation in _opList)
+                        _operationPool.Enqueue(operation);
+
+                    _opList.Clear();
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
     }
 }

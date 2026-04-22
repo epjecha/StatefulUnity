@@ -3,26 +3,22 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
-using ObserveThing;
 using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public class StateObject : StateNode
+    public class StateObject : StateNode<object>
     {
         public override int childCount => _children.Count;
         public override IEnumerable<IStateNode> children => _children.Values;
         public override bool derived => false;
 
         private Dictionary<string, IStateNode> _children = new Dictionary<string, IStateNode>();
-        private SynchronizedNotificationQueue<IStateOpObserver, bool> _observable;
 
         public StateObject() : base() { }
 
         protected override void InitializeInternal()
         {
-            _observable = new SynchronizedNotificationQueue<IStateOpObserver, bool>((_, _) => { }, context);
-
             var type = GetType();
             while (type != typeof(StateObject))
             {
@@ -100,32 +96,10 @@ namespace FofX.Stateful
             return obj;
         }
 
-        public override IDisposable Subscribe(IObserver observer)
-            => Subscribe(new StateOpObserver(
-                onOperation: _ => observer.OnChange(),
-                onError: observer.OnError,
-                onDispose: observer.OnDispose
-            ));
-
-        public override IDisposable Subscribe(IStateOpObserver observer)
-            => _observable.AddObserver(new StateOpObserver(
-                onOperation: observer.OnOperation,
-                onError: observer.OnError,
-                onDispose: () =>
-                {
-                    if (disposed)
-                        observer.OnOperation(new StateOpArgs() { opType = OpType.Dispose, source = this });
-
-                    observer.OnDispose();
-                }
-            ));
-
         protected override void DisposeInternal()
         {
             foreach (var child in children)
                 child.Dispose();
-
-            _observable.Dispose();
         }
     }
 }

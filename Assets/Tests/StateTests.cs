@@ -13,7 +13,7 @@ namespace FofX.Stateful.Tests
         [SetUp]
         public void SetUp()
         {
-            Observers.DefaultExceptionHandler = UnityEngine.Debug.LogException;
+            Settings.DefaultExceptionHandler = UnityEngine.Debug.LogException;
         }
 
         public class TestState : StateObject
@@ -24,7 +24,7 @@ namespace FofX.Stateful.Tests
         [Test]
         public void TestHierarchy()
         {
-            var context = new DefaultSynchronizationContext();
+            var context = new ObservationContext();
             var state = new TestState();
 
             state.Initialize(context, new DefaultLogger() { logLevel = LogLevel.Trace });
@@ -175,44 +175,61 @@ namespace FofX.Stateful.Tests
             Assert.AreEqual(0, state.dict.count);
 
             disposed = false;
-            List<StateOpArgs> ops = new List<StateOpArgs>();
+            var observedOps = new List<(IStateNode source, OpType opType, object param, IStateNode child)>();
 
-            var streamAll = StateObservers.SubscribeAll(
+            var streamAll = StateObservers.SubscribeRecursive(
                 state,
-                onOperation: op => ops.Add(op),
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                        return;
+
+                    observedOps.AddRange(ops.Select<IStateOperation, (IStateNode source, OpType opType, object param, IStateNode child)>(x => new(x.source, x.opType, x.param, x.child)));
+                },
                 onDispose: () => disposed = true,
                 onError: exc => exception = exc
             );
 
-            Assert.AreEqual(0, ops.Count);
+            Assert.AreEqual(0, observedOps.Count);
             Assert.AreEqual(false, disposed);
             Assert.AreEqual(null, exception);
 
-            var element10 = state.dict.Add(10);
-            state.dict.Add(100);
-            state.dict[100].value = "me";
-            state.dict[10].value = "you";
-            state.dict.Remove(10);
+            StateValue<string> element10 = default;
 
-            Assert.AreEqual(5, ops.Count);
+            state.context.ExecuteBatchOperation(() =>
+            {
+                element10 = state.dict.Add(10);
+                state.dict.Add(100);
+                state.dict[100].value = "me";
+                state.dict[10].value = "you";
+                state.dict.Remove(10);
+            });
+
+            Assert.AreEqual(5, observedOps.Count);
             Assert.AreEqual(false, disposed);
             Assert.AreEqual(null, exception);
 
-            AssertStateOpArgsEquals(ops[0], state.dict, OpType.Add, 10, element10);
-            AssertStateOpArgsEquals(ops[1], state.dict, OpType.Add, 100, state.dict[100]);
-            AssertStateOpArgsEquals(ops[2], state.dict[100], OpType.Set, "me", null);
-            AssertStateOpArgsEquals(ops[3], element10, OpType.Set, "you", null);
-            AssertStateOpArgsEquals(ops[4], state.dict, OpType.Remove, 10, element10);
+            Assert.AreEqual(
+                observedOps,
+                new (IStateNode source, OpType opType, object param, IStateNode child)[]
+                {
+                    new(state.dict, OpType.Add, KeyValuePair.Create(10, element10), element10),
+                    new(state.dict, OpType.Add, KeyValuePair.Create(100, state.dict[100]), state.dict[100]),
+                    new(state.dict[100], OpType.Set, "me", null),
+                    new(element10, OpType.Set, "you", null),
+                    new(state.dict, OpType.Remove, KeyValuePair.Create(10, element10), element10),
+                }
+            );
 
-            ops.Clear();
+            observedOps.Clear();
 
             streamAll.Dispose();
 
-            Assert.AreEqual(0, ops.Count);
+            Assert.AreEqual(0, observedOps.Count);
             Assert.AreEqual(true, disposed);
         }
 
-        private void AssertStateOpArgsEquals(StateOpArgs args, IStateNode source, OpType opType, object param, IStateNode child)
+        private void AssertStateOpArgsEquals(IStateOperation args, IStateNode source, OpType opType, object param, IStateNode child)
         {
             Assert.AreEqual(source, args.source);
             Assert.AreEqual(opType, args.opType);
@@ -224,7 +241,7 @@ namespace FofX.Stateful.Tests
         public void TestStateValueArray()
         {
             var array = new StateValueArray<int>();
-            array.Initialize(SynchronizationContext.Default, new DefaultLogger() { logLevel = LogLevel.Debug }, "root");
+            array.Initialize(Settings.DefaultObservationContext, new DefaultLogger() { logLevel = LogLevel.Debug }, "root");
 
             int callCount = 0;
             IReadOnlyList<int> value = default;

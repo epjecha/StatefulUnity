@@ -27,7 +27,7 @@ namespace FofX.Stateful
             => SetValue(values.Cast<T>());
     }
 
-    public class StateValueArray<T> : StateNode, IStateValueArray<T>
+    public class StateValueArray<T> : StateNode<IReadOnlyList<T>>, IStateValueArray<T>
     {
         public int count => _values.Count;
         public T this[int index] => _values[index];
@@ -65,6 +65,23 @@ namespace FofX.Stateful
         {
             _value = _getInitialValue == null ?
                 new ValueObservable<IReadOnlyList<T>>(context) : new ValueObservable<IReadOnlyList<T>>(_getInitialValue(), context);
+
+            _value.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        private void HandleInternalOperation(IReadOnlyList<IReadOnlyList<T>> ops)
+        {
+            if (ops == null)
+                return;
+
+            foreach (var op in ops)
+            {
+                EnqueuePendingOperation(new StateOpArgs<IReadOnlyList<T>>(
+                    source: this,
+                    opType: OpType.Set,
+                    param: op
+                ));
+            }
         }
 
         protected override IStateNode GetChildInternal(string childName)
@@ -118,22 +135,21 @@ namespace FofX.Stateful
         }
 
         public IDisposable Subscribe(IValueObserver<IReadOnlyList<T>> observer)
-            => _value.Subscribe(observer);
-
-        public override IDisposable Subscribe(IObserver observer)
-            => _value.Subscribe(observer);
-
-        public override IDisposable Subscribe(IStateOpObserver observer)
-            => _value.Subscribe(new ValueObserver<IReadOnlyList<T>>(
-                onNext: x => observer.OnOperation(new StateOpArgs() { opType = OpType.Set, param = x, source = this }),
-                onError: observer.OnError,
-                onDispose: () =>
+            => Subscribe(new Observer<StateOpArgs<IReadOnlyList<T>>>(
+                onOperation: ops =>
                 {
-                    if (disposed)
-                        observer.OnOperation(new StateOpArgs() { opType = OpType.Dispose, source = this });
+                    if (ops == null)
+                    {
+                        observer.OnNext(_value.value);
+                        return;
+                    }
 
-                    observer.OnDispose();
-                }
+                    foreach (var op in ops)
+                        observer.OnNext(op.param);
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
             ));
 
         protected override void DisposeInternal()

@@ -43,7 +43,7 @@ namespace FofX.Stateful
             => CopyTo((IStateValueSet<T>)copyTo);
     }
 
-    public class StateValueSet<T> : StateNode, IStateValueSet<T>
+    public class StateValueSet<T> : StateNode<T>, IStateValueSet<T>
     {
         public int count => _set.count;
         public override int childCount => 0;
@@ -77,6 +77,24 @@ namespace FofX.Stateful
         {
             _set = _getInitialValue == null ?
                 new SetObservable<T>(context) : new SetObservable<T>(_getInitialValue(), context);
+
+            _set.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        private void HandleInternalOperation(IReadOnlyList<SetOpArgs<T>> ops)
+        {
+            if (ops == null)
+                return;
+
+            foreach (var op in ops)
+            {
+                EnqueuePendingOperation(new StateOpArgs<T>(
+                    source: this,
+                    opType: op.isRemove ? OpType.Remove : OpType.Add,
+                    param: op.element,
+                    collectionElementId: op.id
+                ));
+            }
         }
 
         protected override IStateNode GetChildInternal(string childName)
@@ -145,26 +163,69 @@ namespace FofX.Stateful
         }
 
         public IDisposable Subscribe(ISetObserver<T> observer)
-            => _set.Subscribe(observer);
+            => Subscribe(new Observer<StateOpArgs<T>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        int index = 0;
+                        foreach (var pair in _set.ElementsWithIds)
+                        {
+                            observer.OnAdd(pair.id, pair.element);
+                            index++;
+                        }
+
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (op.opType == OpType.Add)
+                        {
+                            observer.OnAdd(op.collectionElementId, op.param);
+                        }
+                        else if (op.opType == OpType.Remove)
+                        {
+                            observer.OnRemove(op.collectionElementId, op.param);
+                        }
+                    }
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
 
         public IDisposable Subscribe(ICollectionObserver<T> observer)
-            => _set.Subscribe(observer);
-
-        public override IDisposable Subscribe(IObserver observer)
-            => _set.Subscribe(observer);
-
-        public override IDisposable Subscribe(IStateOpObserver observer)
-            => _set.Subscribe(new SetObserver<T>(
-                onAdd: (_, element) => observer.OnOperation(new StateOpArgs() { opType = OpType.Add, param = element, source = this }),
-                onRemove: (_, element) => observer.OnOperation(new StateOpArgs() { opType = OpType.Remove, param = element, source = this }),
-                onError: observer.OnError,
-                onDispose: () =>
+            => Subscribe(new Observer<StateOpArgs<T>>(
+                onOperation: ops =>
                 {
-                    if (disposed)
-                        observer.OnOperation(new StateOpArgs() { opType = OpType.Dispose, source = this });
+                    if (ops == null)
+                    {
+                        int index = 0;
+                        foreach (var pair in _set.ElementsWithIds)
+                        {
+                            observer.OnAdd(pair.id, pair.element);
+                            index++;
+                        }
 
-                    observer.OnDispose();
-                }
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (op.opType == OpType.Add)
+                        {
+                            observer.OnAdd(op.collectionElementId, op.param);
+                        }
+                        else if (op.opType == OpType.Remove)
+                        {
+                            observer.OnRemove(op.collectionElementId, op.param);
+                        }
+                    }
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
             ));
 
         public override void FromJSON(JSONNode json)

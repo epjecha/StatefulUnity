@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 using ObserveThing;
 using SimpleJSON;
@@ -34,7 +35,7 @@ namespace FofX.Stateful
             => CopyTo((IStateValue<T>)copyTo);
     }
 
-    public class StateValue<T> : StateNode, IStateValue<T>
+    public class StateValue<T> : StateNode<T>, IStateValue<T>
     {
         public T value
         {
@@ -44,11 +45,11 @@ namespace FofX.Stateful
                 if (derived)
                     throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-                if (Equals(_value.value, value))
+                if (Equals(_value, value))
                     return;
 
-                _value.value = value;
                 LogOperation(OpType.Set, value);
+                _value.value = value;
             }
         }
 
@@ -77,6 +78,23 @@ namespace FofX.Stateful
         {
             _value = _getInitialValue == null ?
                 new ValueObservable<T>(context) : new ValueObservable<T>(_getInitialValue(), context);
+
+            _value.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        private void HandleInternalOperation(IReadOnlyList<T> ops)
+        {
+            if (ops == null)
+                return;
+
+            foreach (var op in ops)
+            {
+                EnqueuePendingOperation(new StateOpArgs<T>(
+                    source: this,
+                    opType: OpType.Set,
+                    param: op
+                ));
+            }
         }
 
         protected override IStateNode GetChildInternal(string childName)
@@ -91,12 +109,30 @@ namespace FofX.Stateful
         protected override void CopyToInternal(IStateNode copyTo)
             => CopyTo((IStateValue<T>)copyTo);
 
+        public IDisposable Subscribe(IValueObserver<T> observer)
+            => Subscribe(new Observer<StateOpArgs<T>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        observer.OnNext(_value.value);
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                        observer.OnNext(op.param);
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
+
         public override void Reset()
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            _value.value = _getInitialValue == null ? default : _getInitialValue();
+            value = _getInitialValue == null ? default : _getInitialValue();
 
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
@@ -105,25 +141,6 @@ namespace FofX.Stateful
         {
             copyTo.value = value;
         }
-
-        public IDisposable Subscribe(IValueObserver<T> observer)
-            => _value.Subscribe(observer);
-
-        public override IDisposable Subscribe(IObserver observer)
-            => _value.Subscribe(observer);
-
-        public override IDisposable Subscribe(IStateOpObserver observer)
-            => _value.Subscribe(new ValueObserver<T>(
-                onNext: x => observer.OnOperation(new StateOpArgs() { opType = OpType.Set, param = x, source = this }),
-                onError: observer.OnError,
-                onDispose: () =>
-                {
-                    if (disposed)
-                        observer.OnOperation(new StateOpArgs() { opType = OpType.Dispose, source = this });
-
-                    observer.OnDispose();
-                }
-            ));
 
         public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
@@ -143,13 +160,12 @@ namespace FofX.Stateful
 
         protected override void DisposeInternal()
         {
-            _value.Dispose();
             _deriveStream?.Dispose();
         }
 
         public void Derive(IValueObservable<T> source)
         {
-            _deriveStream = source.Subscribe(x => _value.value = x, immediate: true);
+            _deriveStream = source.Subscribe(x => value = x, immediate: true);
         }
     }
 }
