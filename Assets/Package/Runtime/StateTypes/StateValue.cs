@@ -109,24 +109,6 @@ namespace FofX.Stateful
         protected override void CopyToInternal(IStateNode copyTo)
             => CopyTo((IStateValue<T>)copyTo);
 
-        public IDisposable Subscribe(IValueObserver<T> observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        observer.OnNext(_value.value);
-                        return;
-                    }
-
-                    foreach (var op in ops)
-                        observer.OnNext(op.param);
-                },
-                onError: observer.OnError,
-                onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
-
         public override void Reset()
         {
             if (derived)
@@ -167,5 +149,23 @@ namespace FofX.Stateful
         {
             _deriveStream = source.Subscribe(x => value = x, immediate: true);
         }
+
+        public IDisposable Subscribe(IValueObserver<T> observer)
+            => Subscribe(new Observer<StateOpArgs<T>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        observer.OnNext(_value.value);
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                        observer.OnNext(op.param);
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
     }
 }

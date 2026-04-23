@@ -214,6 +214,64 @@ namespace FofX.Stateful
                 kvpToCopy.Value.CopyTo(copyTo.GetOrAdd(kvpToCopy.Key));
         }
 
+        public override void FromJSON(JSONNode json)
+        {
+            if (json == null)
+            {
+                Reset();
+                return;
+            }
+
+            JSONObject dict = (JSONObject)json;
+            SerializationPair<TKey> serializer = JSONSerialization.GetSerializer<TKey>();
+
+            Clear();
+
+            foreach (var value in dict)
+                Add(serializer.fromJSON(value.Key)).FromJSON(value.Value);
+        }
+
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
+        {
+            JSONObject dict = new JSONObject();
+            SerializationPair<TKey> serializer = JSONSerialization.GetSerializer<TKey>();
+
+            foreach (var kvp in _dictionary.Where(x => filter(x.Value)))
+                dict.Add(serializer.toJSON(kvp.Key), kvp.Value.ToJSON(filter));
+
+            return dict;
+        }
+
+        protected override void DisposeInternal()
+        {
+            foreach (var child in children)
+                child.Dispose();
+
+            _dictionary.Dispose();
+            _deriveStream?.Dispose();
+        }
+
+        public void Derive(IDictionaryObservable<TKey, TValue> source)
+        {
+            _deriveStream = source.Subscribe(
+                onAdd: kvp =>
+                {
+                    if (kvp.Value.parent == null)
+                        kvp.Value.Initialize(this, kvp.Key.ToString());
+
+                    _dictionary.Add(kvp.Key, kvp.Value);
+                },
+                onRemove: kvp =>
+                {
+                    _dictionary.Remove(kvp.Key);
+
+                    if (kvp.Value.parent == this)
+                        kvp.Value.Dispose();
+                },
+                immediate: true
+            );
+        }
+
         public IDisposable Subscribe(IDictionaryObserver<TKey, TValue> observer)
             => Subscribe(new Observer<StateOpArgs<KeyValuePair<TKey, TValue>>>(
                 onOperation: ops =>
@@ -279,63 +337,5 @@ namespace FofX.Stateful
                 onDispose: observer.OnDispose,
                 immediate: observer.immediate
             ));
-
-        public override void FromJSON(JSONNode json)
-        {
-            if (json == null)
-            {
-                Reset();
-                return;
-            }
-
-            JSONObject dict = (JSONObject)json;
-            SerializationPair<TKey> serializer = JSONSerialization.GetSerializer<TKey>();
-
-            Clear();
-
-            foreach (var value in dict)
-                Add(serializer.fromJSON(value.Key)).FromJSON(value.Value);
-        }
-
-        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
-        {
-            JSONObject dict = new JSONObject();
-            SerializationPair<TKey> serializer = JSONSerialization.GetSerializer<TKey>();
-
-            foreach (var kvp in _dictionary.Where(x => filter(x.Value)))
-                dict.Add(serializer.toJSON(kvp.Key), kvp.Value.ToJSON(filter));
-
-            return dict;
-        }
-
-        protected override void DisposeInternal()
-        {
-            foreach (var child in children)
-                child.Dispose();
-
-            _dictionary.Dispose();
-            _deriveStream?.Dispose();
-        }
-
-        public void Derive(IDictionaryObservable<TKey, TValue> source)
-        {
-            _deriveStream = source.Subscribe(
-                onAdd: kvp =>
-                {
-                    if (kvp.Value.parent == null)
-                        kvp.Value.Initialize(this, kvp.Key.ToString());
-
-                    _dictionary.Add(kvp.Key, kvp.Value);
-                },
-                onRemove: kvp =>
-                {
-                    _dictionary.Remove(kvp.Key);
-
-                    if (kvp.Value.parent == this)
-                        kvp.Value.Dispose();
-                },
-                immediate: true
-            );
-        }
     }
 }

@@ -162,6 +162,49 @@ namespace FofX.Stateful
                 copyTo.Add(toAdd);
         }
 
+        public override void FromJSON(JSONNode json)
+        {
+            if (json == null)
+            {
+                Reset();
+                return;
+            }
+
+            JSONArray array = (JSONArray)json;
+            SerializationPair<T> serializer = JSONSerialization.GetSerializer<T>();
+
+            Clear();
+
+            foreach (var value in array.Values)
+                Add(serializer.fromJSON(value));
+        }
+
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
+        {
+            JSONArray array = new JSONArray();
+            SerializationPair<T> serializer = JSONSerialization.GetSerializer<T>();
+
+            foreach (T value in _set)
+                array.Add(serializer.toJSON(value));
+
+            return array;
+        }
+
+        protected override void DisposeInternal()
+        {
+            _set.Dispose();
+            _deriveStream?.Dispose();
+        }
+
+        public void Derive(IListObservable<T> source)
+        {
+            _deriveStream = source.Subscribe(
+                onAdd: item => _set.Add(item),
+                onRemove: item => _set.Remove(item),
+                immediate: true
+            );
+        }
+
         public IDisposable Subscribe(ISetObserver<T> observer)
             => Subscribe(new Observer<StateOpArgs<T>>(
                 onOperation: ops =>
@@ -227,48 +270,5 @@ namespace FofX.Stateful
                 onDispose: observer.OnDispose,
                 immediate: observer.immediate
             ));
-
-        public override void FromJSON(JSONNode json)
-        {
-            if (json == null)
-            {
-                Reset();
-                return;
-            }
-
-            JSONArray array = (JSONArray)json;
-            SerializationPair<T> serializer = JSONSerialization.GetSerializer<T>();
-
-            Clear();
-
-            foreach (var value in array.Values)
-                Add(serializer.fromJSON(value));
-        }
-
-        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
-        {
-            JSONArray array = new JSONArray();
-            SerializationPair<T> serializer = JSONSerialization.GetSerializer<T>();
-
-            foreach (T value in _set)
-                array.Add(serializer.toJSON(value));
-
-            return array;
-        }
-
-        protected override void DisposeInternal()
-        {
-            _set.Dispose();
-            _deriveStream?.Dispose();
-        }
-
-        public void Derive(IListObservable<T> source)
-        {
-            _deriveStream = source.Subscribe(
-                onAdd: item => _set.Add(item),
-                onRemove: item => _set.Remove(item),
-                immediate: true
-            );
-        }
     }
 }

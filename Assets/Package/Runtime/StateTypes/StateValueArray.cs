@@ -134,36 +134,10 @@ namespace FofX.Stateful
             copyTo.SetValue(_value.value);
         }
 
-        public IDisposable Subscribe(IValueObserver<IReadOnlyList<T>> observer)
-            => Subscribe(new Observer<StateOpArgs<IReadOnlyList<T>>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        observer.OnNext(_value.value);
-                        return;
-                    }
-
-                    foreach (var op in ops)
-                        observer.OnNext(op.param);
-                },
-                onError: observer.OnError,
-                onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
-
         protected override void DisposeInternal()
         {
             _value.Dispose();
             _deriveStream?.Dispose();
-        }
-
-        public void Derive(IValueObservable<IReadOnlyList<T>> source)
-        {
-            _deriveStream = source.Subscribe(
-                SetValueInternal,
-                immediate: true
-            );
         }
 
         public override JSONNode ToJSON(Func<IStateNode, bool> filter)
@@ -191,5 +165,31 @@ namespace FofX.Stateful
             var serializer = JSONSerialization.GetSerializer<T>();
             SetValueInternal(((JSONArray)json).Linq.Select(x => serializer.fromJSON(x)));
         }
+
+        public void Derive(IValueObservable<IReadOnlyList<T>> source)
+        {
+            _deriveStream = source.Subscribe(
+                SetValueInternal,
+                immediate: true
+            );
+        }
+
+        public IDisposable Subscribe(IValueObserver<IReadOnlyList<T>> observer)
+            => Subscribe(new Observer<StateOpArgs<IReadOnlyList<T>>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        observer.OnNext(_value.value);
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                        observer.OnNext(op.param);
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
     }
 }

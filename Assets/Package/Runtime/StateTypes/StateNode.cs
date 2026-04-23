@@ -76,27 +76,19 @@ namespace FofX.Stateful
 
     public abstract class StateNode<T> : Observable<StateOpArgs<T>>, IStateNode
     {
-        private class StateOperation : IStateOperation
+        protected class StateOperation : IStateOperation
         {
-            public IStateNode source { get; set; }
-            public OpType opType { get; set; }
-            public object param { get; set; }
-            public uint collectionElementId { get; set; }
-            public int index { get; set; }
-            public IStateNode child { get; set; }
+            public IStateNode source => args.source;
+            public OpType opType => args.opType;
+            public object param => args.param;
+            public uint collectionElementId => args.collectionElementId;
+            public int index => args.index;
+            public IStateNode child => args.child;
+
+            public StateOpArgs<T> args;
 
             public IStateOperation Clone()
-            {
-                return new StateOperation()
-                {
-                    source = source,
-                    opType = opType,
-                    param = param,
-                    collectionElementId = collectionElementId,
-                    index = index,
-                    child = child
-                };
-            }
+                => new StateOperation() { args = args };
         }
 
         public string nodeName { get; private set; }
@@ -109,7 +101,7 @@ namespace FofX.Stateful
         public abstract bool derived { get; }
         public bool initialized { get; private set; }
 
-        private Queue<StateOperation> _operationPool = new Queue<StateOperation>();
+        private Queue<StateOperation> _opPool = new Queue<StateOperation>();
         private List<StateOperation> _opList = new List<StateOperation>();
 
         public StateNode() : base(default) { }
@@ -240,23 +232,17 @@ namespace FofX.Stateful
 
                     foreach (var op in ops)
                     {
-                        if (!_operationPool.TryDequeue(out var operation))
+                        if (!_opPool.TryDequeue(out var operation))
                             operation = new StateOperation();
 
-                        operation.source = op.source;
-                        operation.opType = op.opType;
-                        operation.param = op.param;
-                        operation.collectionElementId = op.collectionElementId;
-                        operation.index = op.index;
-                        operation.child = op.child;
-
+                        operation.args = op;
                         _opList.Add(operation);
                     }
 
                     observer.OnOperation(_opList);
 
                     foreach (var operation in _opList)
-                        _operationPool.Enqueue(operation);
+                        _opPool.Enqueue(operation);
 
                     _opList.Clear();
                 },
