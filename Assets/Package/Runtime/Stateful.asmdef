@@ -1,3 +1,16 @@
 {
-	"name": "Stateful"
+    "name": "Stateful",
+    "rootNamespace": "",
+    "references": [
+        "GUID:251962950e671c049bdb5ecb16442b37"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
 }

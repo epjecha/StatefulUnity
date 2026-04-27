@@ -1,5 +1,12 @@
 {
   "dependencies": {
+    "com.fofx.observething": {
+      "version": "https://github.com/outernet-foundation/ObserveThing.git?path=Assets/Package/Core#feature/observation-context",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "54989ffc4696a22742211853acab52a767d19239"
+    },
     "com.unity.ai.navigation": {
       "version": "2.0.9",
       "depth": 0,

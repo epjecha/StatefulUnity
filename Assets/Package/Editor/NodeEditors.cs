@@ -10,101 +10,64 @@ namespace FofX.Stateful
 {
     public static class NodeEditors
     {
-        public static void DrawObservableNodeInspector(IObservableNode node, HashSet<string> showStatuses)
+        public static void DrawObservableNodeInspector(IStateNode node, HashSet<string> showStatuses)
         {
             bool guiWasEnabled = GUI.enabled;
-            GUI.enabled = !node.isDerived;
+            GUI.enabled = !node.derived;
 
-            if (node is IObservablePrimitiveArray array)
-            {
-                bool show = showStatuses.Contains(node.nodePath);
-                bool newShow = EditorGUILayout.Foldout(show, node.nodeName, true);
-
-                if (show != newShow)
-                {
-                    if (newShow)
-                    {
-                        showStatuses.Add(node.nodePath);
-                    }
-                    else
-                    {
-                        showStatuses.Remove(node.nodePath);
-                    }
-
-                    show = newShow;
-                }
-
-                if (show)
-                {
-                    EditorGUI.indentLevel++;
-                    foreach (object value in array)
-                        EditorGUILayout.LabelField(value.ToString());
-                    EditorGUI.indentLevel--;
-                }
-            }
-            else if (node is IObservablePrimitive primitive)
+            if (node is IStateValue value)
             {
                 try
                 {
-                    object prevValue = primitive.GetValue();
-                    object newValue = DrawPrimitiveField(node.nodeName, prevValue, primitive.primitiveType);
-                    if (!object.Equals(prevValue, newValue))
-                        primitive.context.ExecuteAction(primitive, new SetPrimitiveFromEditorAction(newValue));
+                    object prevValue = value.value;
+                    object newValue = DrawPrimitiveField(node.nodeName, prevValue, value.valueType);
+                    if (!Equals(prevValue, newValue))
+                        value.value = newValue;
                 }
                 catch
                 {
                     Color currentColor = GUI.contentColor;
                     GUI.contentColor = Color.yellow;
-                    EditorGUILayout.LabelField(node.nodeName, $"No drawer for type {primitive.primitiveType}");
+                    EditorGUILayout.LabelField(node.nodeName, $"No drawer for type {value.valueType}");
                     GUI.contentColor = currentColor;
                 }
             }
-            else if (node is IObservableSet set)
+            else if (node is IStateValueSet set)
             {
                 if (HandleFoldout(node, showStatuses))
                 {
                     EditorGUI.indentLevel++;
-                    foreach (object value in set)
-                        EditorGUILayout.LabelField(value.ToString());
+                    foreach (object element in set)
+                        EditorGUILayout.LabelField(element.ToString());
                     EditorGUI.indentLevel--;
                 }
             }
-            else if (node is IObservableList list)
+            else if (node is IStateList list)
             {
                 if (HandleFoldout(node, showStatuses))
                 {
                     EditorGUI.indentLevel++;
-                    for (int i = 0; i < list.count; i++)
+                    for (int i = 0; i < list.Count; i++)
                         DrawObservableNodeInspector(list[i], showStatuses);
                     EditorGUI.indentLevel--;
                 }
             }
-            else if (node is IObservableDictionary)
+            else if (node is IStateDictionary)
             {
                 if (HandleFoldout(node, showStatuses))
                 {
                     EditorGUI.indentLevel++;
-                    foreach (IObservableNode child in node.children.OrderBy(x => x.nodeName))
+                    foreach (IStateNode child in node.children.OrderBy(x => x.nodeName))
                         DrawObservableNodeInspector(child, showStatuses);
                     EditorGUI.indentLevel--;
                 }
             }
-            else if (node is IObservablePrimitiveMap map)
+            else if (node is StateObject)
             {
                 if (HandleFoldout(node, showStatuses))
                 {
                     EditorGUI.indentLevel++;
-                    foreach (var pair in map.Cast<IPrimitiveMapPair>())
-                        EditorGUILayout.LabelField(pair.ToString());
-                    EditorGUI.indentLevel--;
-                }
-            }
-            else if (node is ObservableObject)
-            {
-                if (HandleFoldout(node, showStatuses))
-                {
-                    EditorGUI.indentLevel++;
-                    foreach (IObservableNode child in node.children)
+                    foreach (IStateNode child in node.children)
                         DrawObservableNodeInspector(child, showStatuses);
                     EditorGUI.indentLevel--;
                 }
@@ -120,7 +83,7 @@ namespace FofX.Stateful
             GUI.enabled = guiWasEnabled;
         }
 
-        private static bool HandleFoldout(IObservableNode node, HashSet<string> showStatuses)
+        private static bool HandleFoldout(IStateNode node, HashSet<string> showStatuses)
         {
             bool show = showStatuses.Contains(node.nodePath);
             bool newShow = EditorGUILayout.Foldout(show, node.nodeName, true);
@@ -254,21 +217,6 @@ namespace FofX.Stateful
             else
             {
                 throw new Exception($"Unhandled primitive type {type}");
-            }
-        }
-
-        private class SetPrimitiveFromEditorAction : ObservableNodeAction<IObservablePrimitive>
-        {
-            private object _value;
-
-            public SetPrimitiveFromEditorAction(object value)
-            {
-                _value = value;
-            }
-
-            public override void Execute(IObservablePrimitive target)
-            {
-                target.SetValue(_value);
             }
         }
     }
