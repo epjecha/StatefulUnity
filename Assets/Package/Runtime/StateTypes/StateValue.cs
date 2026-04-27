@@ -155,7 +155,7 @@ namespace FofX.Stateful
 
         public void Derive(IValueObservable<T> source)
         {
-            _deriveStream = source.Subscribe(x => value = x, immediate: true);
+            _deriveStream = source.Subscribe(x => _value.value = x, immediate: true);
         }
 
         public IDisposable Subscribe(IValueObserver<T> observer)
