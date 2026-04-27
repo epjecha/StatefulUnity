@@ -64,6 +64,6 @@ namespace FofX.Stateful
             => new ObservableSet<IStateNode>(context, source).ObservableChildrenRecursive(context).ObservableCombineOperations(context).Subscribe(onOperation, onError, onDispose, immediate);
 
         public static IDisposable SubscribeRecursive(this IStateNode source, Action<IReadOnlyList<IStateOperation>> onOperation = default, Action<Exception> onError = default, Action onDispose = default, bool immediate = false, ObservationContext context = default)
-            => source.ObservableChildren(context).ObservableCombineOperations(context).Subscribe(onOperation, onError, onDispose, immediate);
+            => source.ObservableChildrenRecursive(context).ObservableCombineOperations(context).Subscribe(onOperation, onError, onDispose, immediate);
     }
 }

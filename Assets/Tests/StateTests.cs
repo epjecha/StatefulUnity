@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 
 using NUnit.Framework;
 
 using ObserveThing;
+using UnityEngine;
 
 namespace FofX.Stateful.Tests
 {
@@ -211,11 +211,11 @@ namespace FofX.Stateful.Tests
                 observedOps,
                 new (IStateNode source, OpType opType, object param, IStateNode child)[]
                 {
-                    new(state.dict, OpType.Add, KeyValuePair.Create(10, element10), element10),
-                    new(state.dict, OpType.Add, KeyValuePair.Create(100, state.dict[100]), state.dict[100]),
+                    new(state.dict, OpType.Add, 10, element10),
+                    new(state.dict, OpType.Add, 100, state.dict[100]),
                     new(state.dict[100], OpType.Set, "me", null),
                     new(element10, OpType.Set, "you", null),
-                    new(state.dict, OpType.Remove, KeyValuePair.Create(10, element10), element10),
+                    new(state.dict, OpType.Remove, 10, element10),
                 }
             );
 

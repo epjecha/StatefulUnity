@@ -64,7 +64,7 @@ namespace FofX.Stateful
             => GetOrAdd((TKey)key);
     }
 
-    public class StateDictionary<TKey, TValue> : StateNode<KeyValuePair<TKey, TValue>>, IStateDictionary<TKey, TValue> where TValue : IStateNode, new()
+    public class StateDictionary<TKey, TValue> : StateNode<TKey>, IStateDictionary<TKey, TValue> where TValue : IStateNode, new()
     {
         public int Count => _dictionary.Count;
         public TValue this[TKey index] => _dictionary[index];
@@ -83,7 +83,7 @@ namespace FofX.Stateful
 
         private ObservableDictionary<TKey, TValue> _dictionary;
         private Func<KeyValuePair<TKey, TValue>[]> _getInitialValue;
-        private List<StateOpArgs<KeyValuePair<TKey, TValue>>> _initOps = new List<StateOpArgs<KeyValuePair<TKey, TValue>>>();
+        private List<StateOpArgs<TKey>> _initOps = new List<StateOpArgs<TKey>>();
 
         public StateDictionary() : this(default) { }
 
@@ -100,11 +100,11 @@ namespace FofX.Stateful
             _dictionary.Subscribe(HandleInternalOperation, immediate: true);
         }
 
-        protected override IReadOnlyList<StateOpArgs<KeyValuePair<TKey, TValue>>> GetInitializationOperations()
+        protected override IReadOnlyList<StateOpArgs<TKey>> GetInitializationOperations()
         {
             _initOps.Clear();
             foreach (var element in _dictionary.ElementsWithIds)
-                _initOps.Add(new StateOpArgs<KeyValuePair<TKey, TValue>>(this, OpType.Add, element.kvp, element.id, child: element.kvp.Value));
+                _initOps.Add(new StateOpArgs<TKey>(this, OpType.Add, element.kvp.Key, element.id, child: element.kvp.Value));
             return _initOps;
         }
 
@@ -115,10 +115,10 @@ namespace FofX.Stateful
 
             foreach (var op in ops)
             {
-                EnqueuePendingOperation(new StateOpArgs<KeyValuePair<TKey, TValue>>(
+                EnqueuePendingOperation(new StateOpArgs<TKey>(
                     source: this,
                     opType: op.isRemove ? OpType.Remove : OpType.Add,
-                    param: op.kvp,
+                    param: op.kvp.Key,
                     collectionElementId: op.id,
                     child: op.kvp.Value
                 ));
@@ -281,7 +281,7 @@ namespace FofX.Stateful
         }
 
         public IDisposable Subscribe(IDictionaryObserver<TKey, TValue> observer)
-            => Subscribe(new Observer<StateOpArgs<KeyValuePair<TKey, TValue>>>(
+            => Subscribe(new Observer<StateOpArgs<TKey>>(
                 onOperation: ops =>
                 {
                     if (ops == null)
@@ -300,11 +300,11 @@ namespace FofX.Stateful
                     {
                         if (op.opType == OpType.Add)
                         {
-                            observer.OnAdd(op.collectionElementId, op.param);
+                            observer.OnAdd(op.collectionElementId, KeyValuePair.Create(op.param, (TValue)op.child));
                         }
                         else if (op.opType == OpType.Remove)
                         {
-                            observer.OnRemove(op.collectionElementId, op.param);
+                            observer.OnRemove(op.collectionElementId, KeyValuePair.Create(op.param, (TValue)op.child));
                         }
                     }
                 },
@@ -314,7 +314,7 @@ namespace FofX.Stateful
             ));
 
         public IDisposable Subscribe(ICollectionObserver<KeyValuePair<TKey, TValue>> observer)
-            => Subscribe(new Observer<StateOpArgs<KeyValuePair<TKey, TValue>>>(
+            => Subscribe(new Observer<StateOpArgs<TKey>>(
                 onOperation: ops =>
                 {
                     if (ops == null)
@@ -333,11 +333,11 @@ namespace FofX.Stateful
                     {
                         if (op.opType == OpType.Add)
                         {
-                            observer.OnAdd(op.collectionElementId, op.param);
+                            observer.OnAdd(op.collectionElementId, KeyValuePair.Create(op.param, (TValue)op.child));
                         }
                         else if (op.opType == OpType.Remove)
                         {
-                            observer.OnRemove(op.collectionElementId, op.param);
+                            observer.OnRemove(op.collectionElementId, KeyValuePair.Create(op.param, (TValue)op.child));
                         }
                     }
                 },
