@@ -14,12 +14,12 @@ namespace FofX.Stateful
         }
 
         private IDisposable _stream;
-        private ICollectionObserver<IStateNode> _receiver;
+        private ISetObserver<IStateNode> _receiver;
         private CollectionIdProvider _idProvider;
         private Dictionary<IStateNode, EntryData> _entries = new Dictionary<IStateNode, EntryData>();
         private bool _disposed;
 
-        public RecursiveChildrenObservable(IStateNode source, ICollectionObserver<IStateNode> receiver)
+        public RecursiveChildrenObservable(IStateNode source, ISetObserver<IStateNode> receiver)
         {
             _idProvider = new CollectionIdProvider(x => _entries.Values.Select(x => x.id).Contains(x));
             _receiver = receiver;

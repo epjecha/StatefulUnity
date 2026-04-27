@@ -7,13 +7,13 @@ namespace FofX.Stateful
     public class ChildrenObservable : IDisposable
     {
         private IDisposable _sourceSubscription;
-        private ICollectionObserver<IStateNode> _receiver;
+        private ISetObserver<IStateNode> _receiver;
         private CollectionIdProvider _idProvider;
         private Dictionary<IStateNode, uint> _children = new Dictionary<IStateNode, uint>();
         private bool _initializing;
         private bool _disposed;
 
-        public ChildrenObservable(IStateNode source, ICollectionObserver<IStateNode> receiver)
+        public ChildrenObservable(IStateNode source, ISetObserver<IStateNode> receiver)
         {
             _idProvider = new CollectionIdProvider(_children.ContainsValue);
             _receiver = receiver;

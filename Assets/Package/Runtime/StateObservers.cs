@@ -6,40 +6,64 @@ namespace FofX.Stateful
 {
     public static class StateObservables
     {
-        public static ICollectionObservable<IStateNode> ObservableChildrenRecursive(this IStateNode source, ObservationContext context = default)
-            => new CollectionOperator<IStateNode>(context, receiver => new RecursiveChildrenObservable(source, receiver));
+        public static ISetObservable<IStateNode> ObservableChildrenRecursive(ObservationContext context, params IStateNode[] source)
+            => new ObservableSet<IStateNode>(context, source).ObservableChildrenRecursive(context);
 
-        public static ICollectionObservable<IStateNode> ObservableChildren(ObservationContext context, params IStateNode[] source)
-            => new ObservableSet<IStateNode>(context, source).ObservableSelectMany(x => x.ObservableChildren(), context);
+        public static ISetObservable<IStateNode> ObservableChildrenRecursive(params IStateNode[] source)
+            => new ObservableSet<IStateNode>(source).ObservableChildrenRecursive();
 
-        public static ICollectionObservable<IStateNode> ObservableChildren(params IStateNode[] source)
-            => new ObservableSet<IStateNode>(source).ObservableSelectMany(x => x.ObservableChildren());
+        public static ISetObservable<IStateNode> ObservableChildrenRecursive(IEnumerable<IStateNode> source, ObservationContext context = default)
+            => new ObservableSet<IStateNode>(context, source).ObservableChildrenRecursive(context);
 
-        public static ICollectionObservable<IStateNode> ObservableChildren(IEnumerable<IStateNode> source, ObservationContext context = default)
-            => new ObservableSet<IStateNode>(context, source).ObservableSelectMany(x => x.ObservableChildren(), context);
+        public static ISetObservable<IStateNode> ObservableChildrenRecursive(this ISetObservable<IStateNode> source, ObservationContext context = default)
+            => source.ObservableSelectMany(x => x.ObservableChildrenRecursive(context), context).ObservableDistinct(context);
 
-        public static ICollectionObservable<IStateNode> ObservableChildren(this IStateNode source, ObservationContext context = default)
-            => new CollectionOperator<IStateNode>(context, receiver => new ChildrenObservable(source, receiver));
+        public static ISetObservable<IStateNode> ObservableChildrenRecursive(this IStateNode source, ObservationContext context = default)
+            => new SetOperator<IStateNode>(context, receiver => new RecursiveChildrenObservable(source, receiver));
 
-        public static ObserveThing.IObservable<IStateOperation> CombineOperations(params IStateNode[] source)
+        public static ISetObservable<IStateNode> ObservableChildren(ObservationContext context, params IStateNode[] source)
+            => new ObservableSet<IStateNode>(context, source).ObservableSelectMany(x => x.ObservableChildren(context), context).ObservableDistinct(context);
+
+        public static ISetObservable<IStateNode> ObservableChildren(params IStateNode[] source)
+            => new ObservableSet<IStateNode>(source).ObservableSelectMany(x => x.ObservableChildren()).ObservableDistinct();
+
+        public static ISetObservable<IStateNode> ObservableChildren(IEnumerable<IStateNode> source, ObservationContext context = default)
+            => new ObservableSet<IStateNode>(context, source).ObservableSelectMany(x => x.ObservableChildren(context), context).ObservableDistinct(context);
+
+        public static ISetObservable<IStateNode> ObservableChildren(this IStateNode source, ObservationContext context = default)
+            => new SetOperator<IStateNode>(context, receiver => new ChildrenObservable(source, receiver));
+
+        public static ObserveThing.IObservable<IStateOperation> ObservableCombineOperations(params IStateNode[] source)
             => new ObservableSet<IStateNode>(source).ObservableCombineOperations();
 
-        public static ObserveThing.IObservable<IStateOperation> CombineOperations(ObservationContext context, params IStateNode[] source)
+        public static ObserveThing.IObservable<IStateOperation> ObservableCombineOperations(ObservationContext context, params IStateNode[] source)
             => new ObservableSet<IStateNode>(context, source).ObservableCombineOperations(context);
 
-        public static ObserveThing.IObservable<IStateOperation> CombineOperations(IEnumerable<IStateNode> source, ObservationContext context = default)
+        public static ObserveThing.IObservable<IStateOperation> ObservableCombineOperations(IEnumerable<IStateNode> source, ObservationContext context = default)
             => new ObservableSet<IStateNode>(context, source).ObservableCombineOperations(context);
 
         public static ObserveThing.IObservable<IStateOperation> ObservableCombineOperations(this ISetObservable<IStateNode> source, ObservationContext context = default)
             => new CombineStateObservable(context, source);
-    }
 
-    public static class StateObservers
-    {
-        public static IDisposable SubscribeRecursive(this IStateNode source, Action<IReadOnlyList<IStateOperation>> onOperation = default, Action<Exception> onError = default, Action onDispose = default)
-            => source.ObservableChildrenRecursive().ObservableDistinct().ObservableCombineOperations().Subscribe(onOperation, onError, onDispose);
+        public static IDisposable SubscribeRecursive(ObservationContext context, Action<IReadOnlyList<IStateOperation>> onOperation, params IStateNode[] source)
+            => new ObservableSet<IStateNode>(context, source).ObservableChildrenRecursive(context).ObservableCombineOperations(context).Subscribe(onOperation);
 
-        public static IDisposable SubscribeRecursive(this IStateNode source, Func<IStateNode, IValueObservable<bool>> filter, Action<IReadOnlyList<IStateOperation>> onOperation = default, Action<Exception> onError = default, Action onDispose = default)
-            => source.ObservableChildrenRecursive().ObservableWhere(filter).ObservableDistinct().ObservableCombineOperations().Subscribe(onOperation, onError, onDispose);
+        public static IDisposable SubscribeRecursive(Action<IReadOnlyList<IStateOperation>> onOperation, params IStateNode[] source)
+            => new ObservableSet<IStateNode>(source).ObservableChildrenRecursive().ObservableCombineOperations().Subscribe(onOperation);
+
+        public static IDisposable SubscribeRecursive(Action<IReadOnlyList<IStateOperation>> onOperation, IEnumerable<IStateNode> source, ObservationContext context = default)
+            => new ObservableSet<IStateNode>(context, source).ObservableChildrenRecursive(context).ObservableCombineOperations(context).Subscribe(onOperation);
+
+        public static IDisposable SubscribeRecursive(ObservationContext context, Action<IReadOnlyList<IStateOperation>> onOperation = default, Action<Exception> onError = default, Action onDispose = default, bool immediate = false, params IStateNode[] source)
+            => new ObservableSet<IStateNode>(context, source).ObservableChildrenRecursive(context).ObservableCombineOperations(context).Subscribe(onOperation, onError, onDispose, immediate);
+
+        public static IDisposable SubscribeRecursive(Action<IReadOnlyList<IStateOperation>> onOperation = default, Action<Exception> onError = default, Action onDispose = default, bool immediate = false, params IStateNode[] source)
+            => new ObservableSet<IStateNode>(source).ObservableChildrenRecursive().ObservableCombineOperations().Subscribe(onOperation, onError, onDispose, immediate);
+
+        public static IDisposable SubscribeRecursive(IEnumerable<IStateNode> source, Action<IReadOnlyList<IStateOperation>> onOperation = default, Action<Exception> onError = default, Action onDispose = default, bool immediate = false, ObservationContext context = default)
+            => new ObservableSet<IStateNode>(context, source).ObservableChildrenRecursive(context).ObservableCombineOperations(context).Subscribe(onOperation, onError, onDispose, immediate);
+
+        public static IDisposable SubscribeRecursive(this IStateNode source, Action<IReadOnlyList<IStateOperation>> onOperation = default, Action<Exception> onError = default, Action onDispose = default, bool immediate = false, ObservationContext context = default)
+            => source.ObservableChildren(context).ObservableCombineOperations(context).Subscribe(onOperation, onError, onDispose, immediate);
     }
 }
