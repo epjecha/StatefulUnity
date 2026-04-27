@@ -47,7 +47,7 @@ namespace FofX.Stateful
                 if (HandleFoldout(node, showStatuses))
                 {
                     EditorGUI.indentLevel++;
-                    for (int i = 0; i < list.count; i++)
+                    for (int i = 0; i < list.Count; i++)
                         DrawObservableNodeInspector(list[i], showStatuses);
                     EditorGUI.indentLevel--;
                 }

@@ -58,28 +58,36 @@ namespace FofX.Stateful
         public override bool derived => _deriveStream != null;
         private IDisposable _deriveStream;
 
-        private ValueObservable<T> _value;
+        private ObservableValue<T> _value;
         private Func<T> _getInitialValue;
+        private List<StateOpArgs<T>> _initOps = new List<StateOpArgs<T>>();
 
         private IEnumerable<IStateNode> EmptyChildren()
         {
             yield break;
         }
 
-        public StateValue() { }
+        public StateValue() : this(default(Func<T>)) { }
 
         public StateValue(T value) : this(() => value) { }
-        public StateValue(Func<T> getInitialValue)
+        public StateValue(Func<T> getInitialValue) : base()
         {
             _getInitialValue = getInitialValue;
+            _initOps.Add(default);
         }
 
         protected override void InitializeInternal()
         {
             _value = _getInitialValue == null ?
-                new ValueObservable<T>(context) : new ValueObservable<T>(_getInitialValue(), context);
+                new ObservableValue<T>(context) : new ObservableValue<T>(context, _getInitialValue());
 
             _value.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        protected override IReadOnlyList<StateOpArgs<T>> GetInitializationOperations()
+        {
+            _initOps[0] = new StateOpArgs<T>(this, OpType.Set, value);
+            return _initOps;
         }
 
         private void HandleInternalOperation(IReadOnlyList<T> ops)

@@ -15,7 +15,7 @@ namespace FofX.Stateful
     {
         Type keyType { get; }
         Type valueType { get; }
-        int count { get; }
+        int Count { get; }
         IStateNode this[object key] { get; }
         IEnumerable keys { get; }
         IEnumerable<IStateNode> values { get; }
@@ -66,16 +66,14 @@ namespace FofX.Stateful
 
     public class StateDictionary<TKey, TValue> : StateNode<KeyValuePair<TKey, TValue>>, IStateDictionary<TKey, TValue> where TValue : IStateNode, new()
     {
-        public int count => _dictionary.count;
+        public int Count => _dictionary.Count;
         public TValue this[TKey index] => _dictionary[index];
-        public IEnumerable<TKey> keys => _dictionary.keys;
-        public IEnumerable<TValue> values => _dictionary.values;
-        public override int childCount => _dictionary.count;
+        public IEnumerable<TKey> keys => _dictionary.Keys;
+        public IEnumerable<TValue> values => _dictionary.Values;
+        public override int childCount => _dictionary.Count;
         public override IEnumerable<IStateNode> children => _dictionary.Select(x => (IStateNode)x.Value);
         public override bool derived => _deriveStream != null;
         private IDisposable _deriveStream;
-
-        private Func<KeyValuePair<TKey, TValue>[]> _getInitialValue;
 
         IEnumerator<KeyValuePair<TKey, TValue>> IEnumerable<KeyValuePair<TKey, TValue>>.GetEnumerator()
             => ((IEnumerable<KeyValuePair<TKey, TValue>>)_dictionary).GetEnumerator();
@@ -83,9 +81,11 @@ namespace FofX.Stateful
         IEnumerator IEnumerable.GetEnumerator()
             => ((IEnumerable)_dictionary).GetEnumerator();
 
-        private DictionaryObservable<TKey, TValue> _dictionary;
+        private ObservableDictionary<TKey, TValue> _dictionary;
+        private Func<KeyValuePair<TKey, TValue>[]> _getInitialValue;
+        private List<StateOpArgs<KeyValuePair<TKey, TValue>>> _initOps = new List<StateOpArgs<KeyValuePair<TKey, TValue>>>();
 
-        public StateDictionary() : base() { }
+        public StateDictionary() : this(default) { }
 
         public StateDictionary(Func<KeyValuePair<TKey, TValue>[]> getInitialValue) : base()
         {
@@ -95,9 +95,17 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _dictionary = _getInitialValue == null ?
-                new DictionaryObservable<TKey, TValue>(context) : new DictionaryObservable<TKey, TValue>(_getInitialValue(), context);
+                new ObservableDictionary<TKey, TValue>(context) : new ObservableDictionary<TKey, TValue>(context, _getInitialValue());
 
             _dictionary.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        protected override IReadOnlyList<StateOpArgs<KeyValuePair<TKey, TValue>>> GetInitializationOperations()
+        {
+            _initOps.Clear();
+            foreach (var element in _dictionary.ElementsWithIds)
+                _initOps.Add(new StateOpArgs<KeyValuePair<TKey, TValue>>(this, OpType.Add, element.kvp, element.id, child: element.kvp.Value));
+            return _initOps;
         }
 
         private void HandleInternalOperation(IReadOnlyList<DictionaryOpArgs<TKey, TValue>> ops)
@@ -281,7 +289,7 @@ namespace FofX.Stateful
                         int index = 0;
                         foreach (var pair in _dictionary.ElementsWithIds)
                         {
-                            observer.OnAdd(pair.id, pair.element);
+                            observer.OnAdd(pair.id, pair.kvp);
                             index++;
                         }
 
@@ -314,7 +322,7 @@ namespace FofX.Stateful
                         int index = 0;
                         foreach (var pair in _dictionary.ElementsWithIds)
                         {
-                            observer.OnAdd(pair.id, pair.element);
+                            observer.OnAdd(pair.id, pair.kvp);
                             index++;
                         }
 

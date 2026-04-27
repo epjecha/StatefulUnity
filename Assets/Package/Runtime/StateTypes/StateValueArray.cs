@@ -45,15 +45,17 @@ namespace FofX.Stateful
             => _values.GetEnumerator();
 
         private List<T> _values = new List<T>();
-        private ValueObservable<IReadOnlyList<T>> _value = new ValueObservable<IReadOnlyList<T>>();
+        private ObservableValue<IReadOnlyList<T>> _value = new ObservableValue<IReadOnlyList<T>>();
         private Func<IReadOnlyList<T>> _getInitialValue;
+        private List<StateOpArgs<IReadOnlyList<T>>> _initOps = new List<StateOpArgs<IReadOnlyList<T>>>();
 
-        public StateValueArray() { }
+        public StateValueArray() : this(default(Func<IReadOnlyList<T>>)) { }
 
         public StateValueArray(IReadOnlyList<T> value) : this(() => value) { }
-        public StateValueArray(Func<IReadOnlyList<T>> getInitialValue)
+        public StateValueArray(Func<IReadOnlyList<T>> getInitialValue) : base()
         {
             _getInitialValue = getInitialValue;
+            _initOps = new List<StateOpArgs<IReadOnlyList<T>>>() { new StateOpArgs<IReadOnlyList<T>>(this, OpType.Set, _values) };
         }
 
         private IEnumerable<IStateNode> EmptyChildren()
@@ -64,10 +66,13 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _value = _getInitialValue == null ?
-                new ValueObservable<IReadOnlyList<T>>(context) : new ValueObservable<IReadOnlyList<T>>(_getInitialValue(), context);
+                new ObservableValue<IReadOnlyList<T>>(context) : new ObservableValue<IReadOnlyList<T>>(context, _getInitialValue());
 
             _value.Subscribe(HandleInternalOperation, immediate: true);
         }
+
+        protected override IReadOnlyList<StateOpArgs<IReadOnlyList<T>>> GetInitializationOperations()
+            => _initOps;
 
         private void HandleInternalOperation(IReadOnlyList<IReadOnlyList<T>> ops)
         {

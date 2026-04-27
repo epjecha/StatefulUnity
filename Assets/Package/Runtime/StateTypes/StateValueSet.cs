@@ -14,7 +14,7 @@ namespace FofX.Stateful
     public interface IStateValueSet : IEnumerable, IStateNode
     {
         Type elementType { get; }
-        int count { get; }
+        int Count { get; }
         bool Add(object element);
         bool Remove(object element);
         bool Contains(object element);
@@ -45,7 +45,7 @@ namespace FofX.Stateful
 
     public class StateValueSet<T> : StateNode<T>, IStateValueSet<T>
     {
-        public int count => _set.count;
+        public int Count => _set.Count;
         public override int childCount => 0;
         public override IEnumerable<IStateNode> children => EmptyChildren();
         public override bool derived => _deriveStream != null;
@@ -62,13 +62,14 @@ namespace FofX.Stateful
         IEnumerator IEnumerable.GetEnumerator()
             => ((IEnumerable)_set).GetEnumerator();
 
-        private SetObservable<T> _set;
+        private ObservableSet<T> _set;
         private Func<T[]> _getInitialValue;
+        private List<StateOpArgs<T>> _initOps = new List<StateOpArgs<T>>();
 
-        public StateValueSet() { }
+        public StateValueSet() : this(default(Func<T[]>)) { }
 
         public StateValueSet(params T[] elements) : this(() => elements) { }
-        public StateValueSet(Func<T[]> getInitialValue)
+        public StateValueSet(Func<T[]> getInitialValue) : base()
         {
             _getInitialValue = getInitialValue;
         }
@@ -76,9 +77,16 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _set = _getInitialValue == null ?
-                new SetObservable<T>(context) : new SetObservable<T>(_getInitialValue(), context);
+                new ObservableSet<T>(context) : new ObservableSet<T>(context, _getInitialValue());
 
             _set.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        protected override IReadOnlyList<StateOpArgs<T>> GetInitializationOperations()
+        {
+            _initOps.Clear();
+            _initOps.AddRange(_set.ElementsWithIds.Select(x => new StateOpArgs<T>(this, OpType.Add, x.element, x.id)));
+            return _initOps;
         }
 
         private void HandleInternalOperation(IReadOnlyList<SetOpArgs<T>> ops)

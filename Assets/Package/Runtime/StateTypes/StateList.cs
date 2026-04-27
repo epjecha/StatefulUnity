@@ -12,7 +12,7 @@ namespace FofX.Stateful
     {
         Type itemType { get; }
         IStateNode this[int index] { get; }
-        int count { get; }
+        int Count { get; }
         IStateNode Add();
         IStateNode Insert(int index);
         bool Remove(IStateNode node);
@@ -51,9 +51,9 @@ namespace FofX.Stateful
 
     public class StateList<T> : StateNode<T>, IStateList<T> where T : IStateNode, new()
     {
-        public int count => _list.count;
+        public int Count => _list.Count;
         public T this[int index] => _list[index];
-        public override int childCount => _list.count;
+        public override int childCount => _list.Count;
         public override IEnumerable<IStateNode> children => _list.Select(x => (IStateNode)x);
         public override bool derived => _deriveStream != null;
         private IDisposable _deriveStream;
@@ -64,10 +64,11 @@ namespace FofX.Stateful
         IEnumerator IEnumerable.GetEnumerator()
             => ((IEnumerable)_list).GetEnumerator();
 
-        private ListObservable<T> _list;
+        private ObservableList<T> _list;
         private Func<T[]> _getInitialValue;
+        private List<StateOpArgs<T>> _initOps = new List<StateOpArgs<T>>();
 
-        public StateList() : base() { }
+        public StateList() : this(default) { }
 
         public StateList(Func<T[]> getInitialValue) : base()
         {
@@ -77,9 +78,22 @@ namespace FofX.Stateful
         protected override void InitializeInternal()
         {
             _list = _getInitialValue == null ?
-                new ListObservable<T>(context) : new ListObservable<T>(context, _getInitialValue());
+                new ObservableList<T>(context) : new ObservableList<T>(context, _getInitialValue());
 
             _list.Subscribe(HandleInternalOperation, immediate: true);
+        }
+
+        protected override IReadOnlyList<StateOpArgs<T>> GetInitializationOperations()
+        {
+            _initOps.Clear();
+
+            for (int i = 0; i < _list.Count; i++)
+            {
+                var element = _list.ElementAndIdAt(i);
+                _initOps.Add(new StateOpArgs<T>(this, OpType.Add, element.value, element.id, i, element.value));
+            }
+
+            return _initOps;
         }
 
         private void HandleInternalOperation(IReadOnlyList<ListOpArgs<T>> ops)
@@ -106,7 +120,7 @@ namespace FofX.Stateful
         protected override bool TryGetChildInternal(string childName, out IStateNode child)
         {
             var index = int.Parse(childName);
-            if (index >= _list.count)
+            if (index >= _list.Count)
             {
                 child = default;
                 return false;
@@ -120,7 +134,7 @@ namespace FofX.Stateful
             => CopyTo((IStateList<T>)copyTo);
 
         public T Add()
-            => Insert(_list.count);
+            => Insert(_list.Count);
 
         public T Insert(int index)
         {
@@ -133,7 +147,7 @@ namespace FofX.Stateful
 
             _list.Insert(index, element);
 
-            for (int i = index + 1; i < _list.count; i++)
+            for (int i = index + 1; i < _list.Count; i++)
                 _list[i].Rename(i.ToString());
 
             LogOperation(OpType.Add, index, element);
@@ -163,7 +177,7 @@ namespace FofX.Stateful
             var element = _list[index];
             _list.RemoveAt(index);
 
-            for (int i = index; i < _list.count; i++)
+            for (int i = index; i < _list.Count; i++)
                 _list[i].Rename(i.ToString());
 
             LogOperation(OpType.Remove, index, element);
@@ -203,13 +217,13 @@ namespace FofX.Stateful
 
         public void CopyTo(IStateList<T> copyTo)
         {
-            while (copyTo.count < count)
+            while (copyTo.Count < Count)
                 copyTo.Add();
 
-            while (copyTo.count > count)
-                copyTo.RemoveAt(copyTo.count - 1);
+            while (copyTo.Count > Count)
+                copyTo.RemoveAt(copyTo.Count - 1);
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < Count; i++)
                 _list[i].CopyTo(copyTo[i]);
         }
 
@@ -223,13 +237,13 @@ namespace FofX.Stateful
 
             JSONArray array = (JSONArray)json;
 
-            while (count > array.Count)
-                RemoveAt(count - 1);
+            while (Count > array.Count)
+                RemoveAt(Count - 1);
 
-            while (count < array.Count)
+            while (Count < array.Count)
                 Add();
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < Count; i++)
                 _list[i].FromJSON(array[i]);
         }
 
@@ -237,7 +251,7 @@ namespace FofX.Stateful
         {
             JSONArray array = new JSONArray();
 
-            for (int i = 0; i < _list.count; i++)
+            for (int i = 0; i < _list.Count; i++)
             {
                 var item = _list[i];
                 if (filter(item))
@@ -268,7 +282,7 @@ namespace FofX.Stateful
                     element.Initialize(this, index.ToString());
                     element.PostInitialize();
 
-                    for (int i = index + 1; i < _list.count; i++)
+                    for (int i = index + 1; i < _list.Count; i++)
                         _list[i].Rename(i.ToString());
                 },
                 onRemove: (index, item) =>
@@ -279,7 +293,7 @@ namespace FofX.Stateful
                     if (element.parent != this)
                         return;
 
-                    for (int i = index; i < _list.count; i++)
+                    for (int i = index; i < _list.Count; i++)
                         _list[i].Rename(i.ToString());
 
                     LogOperation(OpType.Remove, index, element);

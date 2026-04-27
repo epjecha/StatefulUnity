@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 using NUnit.Framework;
@@ -45,7 +46,7 @@ namespace FofX.Stateful.Tests
 
             var added = state.dict[1];
 
-            Assert.AreEqual(1, state.dict.count);
+            Assert.AreEqual(1, state.dict.Count);
             Assert.AreEqual("1", added.nodeName);
             Assert.AreEqual("root/dict/1", added.nodePath);
             Assert.AreEqual(state.dict, added.parent);
@@ -55,7 +56,7 @@ namespace FofX.Stateful.Tests
             state.dict.Remove(1);
 
             Assert.AreEqual(true, added.disposed);
-            Assert.AreEqual(0, state.dict.count);
+            Assert.AreEqual(0, state.dict.Count);
 
             int addCount = 0;
             int removeCount = 0;
@@ -172,7 +173,7 @@ namespace FofX.Stateful.Tests
 
             state.dict.Clear();
 
-            Assert.AreEqual(0, state.dict.count);
+            Assert.AreEqual(0, state.dict.Count);
 
             disposed = false;
             var observedOps = new List<(IStateNode source, OpType opType, object param, IStateNode child)>();
@@ -181,9 +182,6 @@ namespace FofX.Stateful.Tests
                 state,
                 onOperation: ops =>
                 {
-                    if (ops == null)
-                        return;
-
                     observedOps.AddRange(ops.Select<IStateOperation, (IStateNode source, OpType opType, object param, IStateNode child)>(x => new(x.source, x.opType, x.param, x.child)));
                 },
                 onDispose: () => disposed = true,

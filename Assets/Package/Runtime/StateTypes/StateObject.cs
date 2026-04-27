@@ -14,6 +14,7 @@ namespace FofX.Stateful
         public override bool derived => false;
 
         private Dictionary<string, IStateNode> _children = new Dictionary<string, IStateNode>();
+        private List<StateOpArgs<object>> _initOps = new List<StateOpArgs<object>>();
 
         public StateObject() : base() { }
 
@@ -42,6 +43,11 @@ namespace FofX.Stateful
 
                 type = type.BaseType;
             }
+        }
+
+        protected override IReadOnlyList<StateOpArgs<object>> GetInitializationOperations()
+        {
+            return _initOps;
         }
 
         protected override IStateNode GetChildInternal(string childName)
