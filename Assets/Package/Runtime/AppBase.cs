@@ -27,8 +27,11 @@ namespace FofX
 
         public static void ExecuteTransaction(params StateTransaction<T>[] transactions)
         {
-            foreach (var transaction in transactions)
-                transaction.ExecuteTransaction(state);
+            ExecuteTransaction(state =>
+            {
+                foreach (var transaction in transactions)
+                    transaction.ExecuteTransaction(state);
+            });
         }
 
         public static void ExecuteTransaction(Action<T> transaction)
