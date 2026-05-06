@@ -139,6 +139,12 @@ namespace FofX.Stateful
 
         public override void FromJSON(JSONNode json)
         {
+            if (derived)
+            {
+                logger.Warning($"Attempted to write to derived state from JSON. This will be ignored. Path: {nodePath}");
+                return;
+            }
+
             if (json == null)
             {
                 Reset();
