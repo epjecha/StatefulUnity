@@ -45,7 +45,7 @@ namespace FofX.Stateful
                 if (derived)
                     throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-                if (Equals(_value, value))
+                if (Equals(_value.value, value))
                     return;
 
                 LogOperation(OpType.Set, value);
