@@ -63,6 +63,7 @@ namespace FofX.Stateful
         bool initialized { get; }
         bool disposed { get; }
         bool derived { get; }
+        void Initialize(ObservationContext context, ILogger logger, string name = "root");
         void Initialize(IStateNode parent, string name);
         void PostInitialize();
         void Reset();
