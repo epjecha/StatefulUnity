@@ -17,6 +17,7 @@ namespace FofX.Stateful
         IStateNode Insert(int index);
         bool Remove(IStateNode node);
         void RemoveAt(int index);
+        int IndexOf(IStateNode node);
         void Clear();
         void CopyTo(IStateList copyTo);
     }
@@ -28,6 +29,7 @@ namespace FofX.Stateful
         new T Insert(int index);
         bool Remove(T element);
         new void RemoveAt(int index);
+        int IndexOf(T value);
         void CopyTo(IStateList<T> copyTo);
 
         Type IStateList.itemType => typeof(T);
@@ -44,6 +46,9 @@ namespace FofX.Stateful
 
         void IStateList.RemoveAt(int index)
             => RemoveAt(index);
+
+        int IStateList.IndexOf(IStateNode node)
+            => IndexOf((T)node);
 
         void IStateList.CopyTo(IStateList copyTo)
             => CopyTo(copyTo);

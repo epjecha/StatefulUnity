@@ -23,6 +23,8 @@ namespace FofX.Stateful
         bool Remove(object key);
         bool TryGetValue(object key, out IStateNode value);
         IStateNode GetOrAdd(object key);
+        object GetKey(IStateNode value);
+        bool TryGetKey(IStateNode value, out object key);
         void Clear();
     }
 
@@ -35,6 +37,8 @@ namespace FofX.Stateful
         bool Remove(TKey key);
         bool TryGetValue(TKey key, out TValue value);
         TValue GetOrAdd(TKey key);
+        TKey GetKey(TValue value);
+        bool TryGetKey(TValue value, out TKey key);
 
         Type IStateDictionary.keyType => typeof(TKey);
         Type IStateDictionary.valueType => typeof(TValue);
@@ -62,6 +66,21 @@ namespace FofX.Stateful
 
         IStateNode IStateDictionary.GetOrAdd(object key)
             => GetOrAdd((TKey)key);
+
+        object IStateDictionary.GetKey(IStateNode value)
+            => GetKey((TValue)value);
+
+        bool IStateDictionary.TryGetKey(IStateNode value, out object key)
+        {
+            if (TryGetKey((TValue)value, out TKey k))
+            {
+                key = k;
+                return true;
+            }
+
+            key = default;
+            return false;
+        }
     }
 
     public class StateDictionary<TKey, TValue> : StateNode<TKey>, IStateDictionary<TKey, TValue> where TValue : IStateNode, new()
@@ -82,6 +101,7 @@ namespace FofX.Stateful
             => ((IEnumerable)_dictionary).GetEnumerator();
 
         private ObservableDictionary<TKey, TValue> _dictionary;
+        private Dictionary<TValue, TKey> _reverse = new Dictionary<TValue, TKey>();
         private Func<KeyValuePair<TKey, TValue>[]> _getInitialValue;
 
         public StateDictionary() : this(default) { }
@@ -95,6 +115,9 @@ namespace FofX.Stateful
         {
             _dictionary = _getInitialValue == null ?
                 new ObservableDictionary<TKey, TValue>(context) : new ObservableDictionary<TKey, TValue>(context, _getInitialValue());
+
+            foreach (var kvp in _dictionary)
+                _reverse.Add(kvp.Value, kvp.Key);
 
             _dictionary.Subscribe(HandleInternalOperation, immediate: true);
         }
@@ -144,6 +167,7 @@ namespace FofX.Stateful
             value.Initialize(this, key.ToString());
             value.PostInitialize();
             _dictionary.Add(key, value);
+            _reverse.Add(value, key);
             LogOperation(OpType.Add, key, value);
             return value;
         }
@@ -157,6 +181,8 @@ namespace FofX.Stateful
                 return false;
 
             _dictionary.Remove(key);
+            _reverse.Remove(value);
+
             LogOperation(OpType.Remove, key, value);
 
             value.Dispose();
@@ -181,12 +207,19 @@ namespace FofX.Stateful
             return Add(key);
         }
 
+        public TKey GetKey(TValue value)
+            => _reverse[value];
+
+        public bool TryGetKey(TValue value, out TKey key)
+            => _reverse.TryGetValue(value, out key);
+
         public void Clear()
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
             _dictionary.Clear();
+            _reverse.Clear();
         }
 
         public override void Reset()
@@ -195,11 +228,15 @@ namespace FofX.Stateful
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
             _dictionary.Clear();
+            _reverse.Clear();
 
             if (_getInitialValue != null)
             {
                 foreach (var kvp in _getInitialValue())
+                {
                     _dictionary.Add(kvp.Key, kvp.Value);
+                    _reverse.Add(kvp.Value, kvp.Key);
+                }
             }
 
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
