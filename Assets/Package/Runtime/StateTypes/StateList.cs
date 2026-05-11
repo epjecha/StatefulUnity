@@ -85,12 +85,12 @@ namespace FofX.Stateful
 
         protected override IReadOnlyList<StateOpArgs<T>> GetInitializationOperations()
         {
-            _initOps.Clear();
+            var ops = new StateOpArgs<T>[_list.Count];
 
             for (int i = 0; i < _list.Count; i++)
             {
                 var element = _list.ElementAndIdAt(i);
-                _initOps.Add(new StateOpArgs<T>(this, OpType.Add, element.value, element.id, i, element.value));
+                ops[i] = new StateOpArgs<T>(this, OpType.Add, element.value, element.id, i, element.value);
             }
 
             return _initOps;

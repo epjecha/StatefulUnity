@@ -178,7 +178,7 @@ namespace FofX.Stateful.Tests
             disposed = false;
             var observedOps = new List<(IStateNode source, OpType opType, object param, IStateNode child)>();
 
-            var streamAll = state.SubscribeRecursive(
+            var streamAll = state.SubscribeOperationsRecursive(
                 context: context,
                 onOperation: ops =>
                 {

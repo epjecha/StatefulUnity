@@ -83,7 +83,6 @@ namespace FofX.Stateful
 
         private ObservableDictionary<TKey, TValue> _dictionary;
         private Func<KeyValuePair<TKey, TValue>[]> _getInitialValue;
-        private List<StateOpArgs<TKey>> _initOps = new List<StateOpArgs<TKey>>();
 
         public StateDictionary() : this(default) { }
 
@@ -101,12 +100,7 @@ namespace FofX.Stateful
         }
 
         protected override IReadOnlyList<StateOpArgs<TKey>> GetInitializationOperations()
-        {
-            _initOps.Clear();
-            foreach (var element in _dictionary.ElementsWithIds)
-                _initOps.Add(new StateOpArgs<TKey>(this, OpType.Add, element.kvp.Key, element.id, child: element.kvp.Value));
-            return _initOps;
-        }
+            => _dictionary.ElementsWithIds.Select(x => new StateOpArgs<TKey>(this, OpType.Add, x.kvp.Key, x.id, child: x.kvp.Value)).ToArray();
 
         private void HandleInternalOperation(IReadOnlyList<DictionaryOpArgs<TKey, TValue>> ops)
         {

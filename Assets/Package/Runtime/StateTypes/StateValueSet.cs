@@ -83,11 +83,7 @@ namespace FofX.Stateful
         }
 
         protected override IReadOnlyList<StateOpArgs<T>> GetInitializationOperations()
-        {
-            _initOps.Clear();
-            _initOps.AddRange(_set.ElementsWithIds.Select(x => new StateOpArgs<T>(this, OpType.Add, x.element, x.id)));
-            return _initOps;
-        }
+            => _set.ElementsWithIds.Select(x => new StateOpArgs<T>(this, OpType.Add, x.element, x.id)).ToArray();
 
         private void HandleInternalOperation(IReadOnlyList<SetOpArgs<T>> ops)
         {
