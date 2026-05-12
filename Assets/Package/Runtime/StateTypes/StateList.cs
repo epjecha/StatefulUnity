@@ -71,7 +71,6 @@ namespace FofX.Stateful
 
         private ObservableList<T> _list;
         private Func<T[]> _getInitialValue;
-        private List<StateOpArgs<T>> _initOps = new List<StateOpArgs<T>>();
 
         public StateList() : this(default) { }
 
@@ -98,7 +97,7 @@ namespace FofX.Stateful
                 ops[i] = new StateOpArgs<T>(this, OpType.Add, element.value, element.id, i, element.value);
             }
 
-            return _initOps;
+            return ops;
         }
 
         private void HandleInternalOperation(IReadOnlyList<ListOpArgs<T>> ops)

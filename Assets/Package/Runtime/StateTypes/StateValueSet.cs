@@ -64,7 +64,6 @@ namespace FofX.Stateful
 
         private ObservableSet<T> _set;
         private Func<T[]> _getInitialValue;
-        private List<StateOpArgs<T>> _initOps = new List<StateOpArgs<T>>();
 
         public StateValueSet() : this(default(Func<T[]>)) { }
 
