@@ -10,7 +10,7 @@ namespace FofX.Stateful
 {
     public static class NodeEditors
     {
-        public static void DrawObservableNodeInspector(IStateNode node, HashSet<string> showStatuses)
+        public static void DrawObservableNodeInspector(IStateNode node, HashSet<string> showStatuses, Dictionary<Type, Func<object, object>> additionalValueDrawers = null)
         {
             bool guiWasEnabled = GUI.enabled;
             GUI.enabled = !node.derived;
@@ -20,7 +20,7 @@ namespace FofX.Stateful
                 try
                 {
                     object prevValue = value.value;
-                    object newValue = DrawPrimitiveField(node.nodeName, prevValue, value.valueType);
+                    object newValue = DrawPrimitiveField(node.nodeName, prevValue, value.valueType, additionalValueDrawers);
                     if (!Equals(prevValue, newValue))
                         value.value = newValue;
                 }
@@ -48,7 +48,7 @@ namespace FofX.Stateful
                 {
                     EditorGUI.indentLevel++;
                     for (int i = 0; i < list.Count; i++)
-                        DrawObservableNodeInspector(list[i], showStatuses);
+                        DrawObservableNodeInspector(list[i], showStatuses, additionalValueDrawers);
                     EditorGUI.indentLevel--;
                 }
             }
@@ -58,7 +58,7 @@ namespace FofX.Stateful
                 {
                     EditorGUI.indentLevel++;
                     foreach (IStateNode child in node.children.OrderBy(x => x.nodeName))
-                        DrawObservableNodeInspector(child, showStatuses);
+                        DrawObservableNodeInspector(child, showStatuses, additionalValueDrawers);
                     EditorGUI.indentLevel--;
                 }
             }
@@ -68,7 +68,7 @@ namespace FofX.Stateful
                 {
                     EditorGUI.indentLevel++;
                     foreach (IStateNode child in node.children)
-                        DrawObservableNodeInspector(child, showStatuses);
+                        DrawObservableNodeInspector(child, showStatuses, additionalValueDrawers);
                     EditorGUI.indentLevel--;
                 }
             }
@@ -103,7 +103,7 @@ namespace FofX.Stateful
             return newShow;
         }
 
-        public static object DrawPrimitiveField(string label, object value, Type type)
+        public static object DrawPrimitiveField(string label, object value, Type type, Dictionary<Type, Func<object, object>> additionalValueDrawers = null)
         {
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
             {
@@ -213,6 +213,10 @@ namespace FofX.Stateful
             {
                 EditorGUILayout.LabelField(label, $"[Object: {value}]");
                 return value;
+            }
+            else if (additionalValueDrawers != null && additionalValueDrawers.TryGetValue(type, out var drawer))
+            {
+                return drawer(value);
             }
             else
             {
