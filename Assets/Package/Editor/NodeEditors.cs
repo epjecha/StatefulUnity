@@ -10,7 +10,7 @@ namespace FofX.Stateful
 {
     public static class NodeEditors
     {
-        public static void DrawObservableNodeInspector(IStateNode node, HashSet<string> showStatuses, Dictionary<Type, Func<object, object>> additionalValueDrawers = null)
+        public static void DrawObservableNodeInspector(IStateNode node, HashSet<string> showStatuses, Dictionary<Type, Func<string, object, object>> additionalValueDrawers = null)
         {
             bool guiWasEnabled = GUI.enabled;
             GUI.enabled = !node.derived;
@@ -103,7 +103,7 @@ namespace FofX.Stateful
             return newShow;
         }
 
-        public static object DrawPrimitiveField(string label, object value, Type type, Dictionary<Type, Func<object, object>> additionalValueDrawers = null)
+        public static object DrawPrimitiveField(string label, object value, Type type, Dictionary<Type, Func<string, object, object>> additionalValueDrawers = null)
         {
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
             {
@@ -216,7 +216,7 @@ namespace FofX.Stateful
             }
             else if (additionalValueDrawers != null && additionalValueDrawers.TryGetValue(type, out var drawer))
             {
-                return drawer(value);
+                return drawer(label, value);
             }
             else
             {
