@@ -195,7 +195,14 @@ namespace FofX.Stateful
             }
             else if (type.IsEnum)
             {
-                return EditorGUILayout.EnumPopup(label, (Enum)value);
+                if (type.IsDefined(typeof(FlagsAttribute), false))
+                {
+                    return EditorGUILayout.EnumFlagsField(label, (Enum)value);
+                }
+                else
+                {
+                    return EditorGUILayout.EnumPopup(label, (Enum)value);
+                }
             }
             else if (type == typeof(Uri))
             {

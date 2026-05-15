@@ -1,5 +1,6 @@
 *.csproj
 *.sln
+*.lscache
 Assets/Packages/
 Build/
 Builds/
