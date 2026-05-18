@@ -11,7 +11,7 @@ using FofX.Serialization;
 
 namespace FofX.Stateful
 {
-    public interface IStateDictionary : IEnumerable, IStateNode
+    public interface IStateDictionary : IEnumerable, IStateNode, ICollectionObservable
     {
         Type keyType { get; }
         Type valueType { get; }

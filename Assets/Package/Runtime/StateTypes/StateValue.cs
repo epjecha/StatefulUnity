@@ -9,7 +9,7 @@ using FofX.Serialization;
 
 namespace FofX.Stateful
 {
-    public interface IStateValue : IStateNode
+    public interface IStateValue : IStateNode, IValueObservable
     {
         object value { get; set; }
         Type valueType { get; }

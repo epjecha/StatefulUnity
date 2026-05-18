@@ -8,7 +8,7 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public interface IStateValueArray : IStateNode, IEnumerable
+    public interface IStateValueArray : IStateNode, IEnumerable, IValueObservable
     {
         int count { get; }
         Type elementType { get; }

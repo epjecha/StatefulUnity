@@ -11,7 +11,7 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public interface IStateValueSet : IEnumerable, IStateNode
+    public interface IStateValueSet : IEnumerable, IStateNode, ICollectionObservable
     {
         Type elementType { get; }
         int Count { get; }
