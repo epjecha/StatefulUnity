@@ -382,5 +382,38 @@ namespace FofX.Stateful
                 onDispose: observer.OnDispose,
                 immediate: observer.immediate
             ));
+
+        public IDisposable Subscribe(ICollectionObserver observer)
+            => Subscribe(new Observer<StateOpArgs<TKey>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        int index = 0;
+                        foreach (var pair in _dictionary.ElementsWithIds)
+                        {
+                            observer.OnAdd(pair.id, pair.kvp);
+                            index++;
+                        }
+
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (op.opType == OpType.Add)
+                        {
+                            observer.OnAdd(op.collectionElementId, KeyValuePair.Create(op.param, (TValue)op.child));
+                        }
+                        else if (op.opType == OpType.Remove)
+                        {
+                            observer.OnRemove(op.collectionElementId, KeyValuePair.Create(op.param, (TValue)op.child));
+                        }
+                    }
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
     }
 }

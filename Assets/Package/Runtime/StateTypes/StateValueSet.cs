@@ -279,5 +279,39 @@ namespace FofX.Stateful
                 onDispose: observer.OnDispose,
                 immediate: observer.immediate
             ));
+
+
+        public IDisposable Subscribe(ICollectionObserver observer)
+            => Subscribe(new Observer<StateOpArgs<T>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        int index = 0;
+                        foreach (var pair in _set.ElementsWithIds)
+                        {
+                            observer.OnAdd(pair.id, pair.element);
+                            index++;
+                        }
+
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                    {
+                        if (op.opType == OpType.Add)
+                        {
+                            observer.OnAdd(op.collectionElementId, op.param);
+                        }
+                        else if (op.opType == OpType.Remove)
+                        {
+                            observer.OnRemove(op.collectionElementId, op.param);
+                        }
+                    }
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
     }
 }

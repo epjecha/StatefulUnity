@@ -202,5 +202,23 @@ namespace FofX.Stateful
                 onDispose: observer.OnDispose,
                 immediate: observer.immediate
             ));
+
+        public IDisposable Subscribe(IValueObserver observer)
+            => Subscribe(new Observer<StateOpArgs<IReadOnlyList<T>>>(
+                onOperation: ops =>
+                {
+                    if (ops == null)
+                    {
+                        observer.OnNext(_value.value);
+                        return;
+                    }
+
+                    foreach (var op in ops)
+                        observer.OnNext(op.param);
+                },
+                onError: observer.OnError,
+                onDispose: observer.OnDispose,
+                immediate: observer.immediate
+            ));
     }
 }
