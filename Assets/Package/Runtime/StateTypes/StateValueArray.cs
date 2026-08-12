@@ -13,7 +13,7 @@ namespace FofX.Stateful
         int count { get; }
         Type elementType { get; }
 
-        void SetValue(IReadOnlyList<object> values);
+        void SetValue(IEnumerable values);
         void Clear();
     }
 
@@ -94,7 +94,7 @@ namespace FofX.Stateful
             EnqueuePendingStateOperation(new() { source = this, value = _externalList });
         }
 
-        public void SetValue(IReadOnlyList<T> value)
+        public void SetValue(IEnumerable<T> value)
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
@@ -159,7 +159,7 @@ namespace FofX.Stateful
             );
         }
 
-        void IStateValueArray.SetValue(IReadOnlyList<object> values)
+        void IStateValueArray.SetValue(IEnumerable values)
             => SetValue(values.Cast<T>().ToArray());
 
         public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
