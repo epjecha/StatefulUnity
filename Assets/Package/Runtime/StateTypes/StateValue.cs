@@ -9,58 +9,56 @@ using FofX.Serialization;
 
 namespace FofX.Stateful
 {
+    public struct StateValueOperation<T> : IStateOperation
+    {
+        public IStateNode source { get; set; }
+        public OpType opType => OpType.Set;
+        public T value { get; set; }
+
+        uint IStateOperation.elementId => 0;
+        object IStateOperation.param => value;
+        public IStateNode child => null;
+
+        public override string ToString()
+        {
+            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={value}";
+        }
+    }
+
     public interface IStateValue : IStateNode, IValueObservable
     {
         object value { get; set; }
         Type valueType { get; }
-
-        void CopyTo(IStateValue copyTo);
     }
 
-    public interface IStateValue<T> : IValueObservable<T>, IStateValue
-    {
-        new T value { get; set; }
-
-        object IStateValue.value
-        {
-            get => value;
-            set => this.value = (T)value;
-        }
-
-        Type IStateValue.valueType => typeof(T);
-
-        void CopyTo(IStateValue<T> copyTo);
-
-        void IStateValue.CopyTo(IStateValue copyTo)
-            => CopyTo((IStateValue<T>)copyTo);
-    }
-
-    public class StateValue<T> : StateNode<T>, IStateValue<T>
+    public class StateValue<T> : StateNode<IValueObserver<T>, StateValueOperation<T>>,
+        IStateValue,
+        IValueObservable<T>
     {
         public T value
         {
-            get => _value.value;
+            get => _value;
             set
             {
                 if (derived)
                     throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-                if (Equals(_value.value, value))
-                    return;
-
-                LogOperation(OpType.Set, value);
-                _value.value = value;
+                SetInternal(value);
             }
         }
 
         public override int childCount => 0;
         public override IEnumerable<IStateNode> children => EmptyChildren();
         public override bool derived => _deriveStream != null;
+
+        object IStateValue.value { get => value; set => this.value = (T)value; }
+
+        public Type valueType => typeof(T);
+
         private IDisposable _deriveStream;
 
-        private ObservableValue<T> _value;
+        private T _value;
         private Func<T> _getInitialValue;
-        private List<StateOpArgs<T>> _initOps = new List<StateOpArgs<T>>();
 
         private IEnumerable<IStateNode> EmptyChildren()
         {
@@ -73,35 +71,27 @@ namespace FofX.Stateful
         public StateValue(Func<T> getInitialValue) : base()
         {
             _getInitialValue = getInitialValue;
-            _initOps.Add(default);
         }
 
         protected override void InitializeInternal()
         {
-            _value = _getInitialValue == null ?
-                new ObservableValue<T>(context) : new ObservableValue<T>(context, _getInitialValue());
-
-            _value.Subscribe(HandleInternalOperation, immediate: true);
+            value = _getInitialValue == null ? default : _getInitialValue();
         }
 
-        protected override IReadOnlyList<StateOpArgs<T>> GetInitializationOperations()
+        protected override IEnumerable<StateValueOperation<T>> GetInitializationOperations()
         {
-            _initOps[0] = new StateOpArgs<T>(this, OpType.Set, value);
-            return _initOps;
+            yield return new StateValueOperation<T>() { source = this, value = value };
         }
 
-        private void HandleInternalOperation(IReadOnlyList<T> ops)
+        protected override void SendStateOperation(IValueObserver<T> observer, StateValueOperation<T> operation)
         {
-            if (ops == null)
-                return;
-
-            foreach (var op in ops)
+            if (operation.opType == OpType.Set)
             {
-                EnqueuePendingOperation(new StateOpArgs<T>(
-                    source: this,
-                    opType: OpType.Set,
-                    param: op
-                ));
+                observer.OnNext(operation.value);
+            }
+            else
+            {
+                throw new Exception($"Unhandled op type {operation.opType}");
             }
         }
 
@@ -114,8 +104,10 @@ namespace FofX.Stateful
             return false;
         }
 
-        protected override void CopyToInternal(IStateNode copyTo)
-            => CopyTo((IStateValue<T>)copyTo);
+        public override void CopyTo(IStateNode copyTo)
+        {
+            ((StateValue<T>)copyTo).value = value;
+        }
 
         public override void Reset()
         {
@@ -127,15 +119,8 @@ namespace FofX.Stateful
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
 
-        public void CopyTo(IStateValue<T> copyTo)
-        {
-            copyTo.value = value;
-        }
-
         public override JSONNode ToJSON(Func<IStateNode, bool> filter)
-        {
-            return JSONSerialization.ToJSON(value);
-        }
+            => JSONSerialization.ToJSON(value);
 
         public override void FromJSON(JSONNode json)
         {
@@ -159,45 +144,35 @@ namespace FofX.Stateful
             _deriveStream?.Dispose();
         }
 
-        public void Derive(IValueObservable<T> source)
+        private void SetInternal(T value)
         {
-            _deriveStream = source.Subscribe(x => _value.value = x, immediate: true);
+            if (Equals(_value, value))
+                return;
+
+            _value = value;
+            EnqueuePendingStateOperation(new() { source = this, value = _value });
         }
 
-        public IDisposable Subscribe(IValueObserver<T> observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        observer.OnNext(_value.value);
-                        return;
-                    }
+        public void Derive(IValueObservable<T> source)
+        {
+            _deriveStream = source.Subscribe(
+                SetInternal,
+                immediate: true
+            );
+        }
 
-                    foreach (var op in ops)
-                        observer.OnNext(op.param);
-                },
-                onError: observer.OnError,
+        public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ValueObserver<T>(
+                onNext: x => observer.OnNext(new StateValueOperation<T>() { source = this, value = x }),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
 
-        public IDisposable Subscribe(IValueObserver observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        observer.OnNext(_value.value);
-                        return;
-                    }
-
-                    foreach (var op in ops)
-                        observer.OnNext(op.param);
-                },
-                onError: observer.OnError,
+        public IDisposable Subscribe(IValueObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ValueObserver<T>(
+                onNext: x => observer.OnNext(x),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
     }
 }

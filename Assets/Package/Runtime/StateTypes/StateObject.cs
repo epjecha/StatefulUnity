@@ -2,19 +2,33 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-
+using ObserveThing;
 using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public class StateObject : StateNode<object>
+    public struct StateObjectOperation : IStateOperation
+    {
+        public IStateNode source { get; set; }
+        public OpType opType => OpType.None;
+        public object param { get; }
+
+        uint IStateOperation.elementId { get; }
+        IStateNode IStateOperation.child { get; }
+
+        public override string ToString()
+        {
+            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={param}";
+        }
+    }
+
+    public class StateObject : StateNode<IObserverBase, StateObjectOperation>
     {
         public override int childCount => _children.Count;
         public override IEnumerable<IStateNode> children => _children.Values;
         public override bool derived => false;
 
         private Dictionary<string, IStateNode> _children = new Dictionary<string, IStateNode>();
-        private List<StateOpArgs<object>> _initOps = new List<StateOpArgs<object>>();
 
         public StateObject() : base() { }
 
@@ -45,9 +59,14 @@ namespace FofX.Stateful
             }
         }
 
-        protected override IReadOnlyList<StateOpArgs<object>> GetInitializationOperations()
+        protected override IEnumerable<StateObjectOperation> GetInitializationOperations()
         {
-            return _initOps;
+            yield break;
+        }
+
+        protected override void SendStateOperation(IObserverBase observer, StateObjectOperation operation)
+        {
+            throw new NotImplementedException();
         }
 
         protected override IStateNode GetChildInternal(string childName)
@@ -55,9 +74,6 @@ namespace FofX.Stateful
 
         protected override bool TryGetChildInternal(string childName, out IStateNode child)
             => _children.TryGetValue(childName, out child);
-
-        protected override void CopyToInternal(IStateNode copyTo)
-            => CopyTo((StateObject)copyTo);
 
         public override void Reset()
         {
@@ -113,5 +129,14 @@ namespace FofX.Stateful
             foreach (var child in children)
                 child.Dispose();
         }
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            foreach (var child in children)
+                child.CopyTo(copyTo.GetChild(child.nodeName));
+        }
+
+        public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+            => Subscribe((IObserverBase)new Observer<IStateOperation>());
     }
 }

@@ -11,6 +11,22 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
+    public struct StateSetOperation<T> : IStateOperation
+    {
+        public IStateNode source { get; set; }
+        public OpType opType { get; set; }
+        public T element { get; set; }
+        public uint elementId { get; set; }
+
+        object IStateOperation.param => element;
+        public IStateNode child => null;
+
+        public override string ToString()
+        {
+            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={element}";
+        }
+    }
+
     public interface IStateValueSet : IEnumerable, IStateNode, ICollectionObservable
     {
         Type elementType { get; }
@@ -19,36 +35,20 @@ namespace FofX.Stateful
         bool Remove(object element);
         bool Contains(object element);
         void Clear();
-        void CopyTo(IStateList copyTo);
     }
 
-    public interface IStateValueSet<T> : ISetObservable<T>, IStateValueSet, IEnumerable<T>
-    {
-        Type IStateValueSet.elementType => typeof(T);
-        bool Add(T element);
-        bool Remove(T element);
-        bool Contains(T element);
-        void CopyTo(IStateValueSet<T> copyTo);
-
-        bool IStateValueSet.Add(object element)
-            => Add((T)element);
-
-        bool IStateValueSet.Remove(object element)
-            => Remove((T)element);
-
-        bool IStateValueSet.Contains(object element)
-            => Contains((T)element);
-
-        void IStateValueSet.CopyTo(IStateList copyTo)
-            => CopyTo((IStateValueSet<T>)copyTo);
-    }
-
-    public class StateValueSet<T> : StateNode<T>, IStateValueSet<T>
+    public class StateValueSet<T> : StateNode<ISetObserver<T>, StateSetOperation<T>>,
+        IStateValueSet,
+        ISetObservable<T>,
+        IEnumerable<T>
     {
         public int Count => _set.Count;
         public override int childCount => 0;
         public override IEnumerable<IStateNode> children => EmptyChildren();
         public override bool derived => _deriveStream != null;
+
+        Type IStateValueSet.elementType => throw new NotImplementedException();
+
         private IDisposable _deriveStream;
 
         private IEnumerable<IStateNode> EmptyChildren()
@@ -62,7 +62,8 @@ namespace FofX.Stateful
         IEnumerator IEnumerable.GetEnumerator()
             => ((IEnumerable)_set).GetEnumerator();
 
-        private ObservableSet<T> _set;
+        private Dictionary<T, uint> _set = new Dictionary<T, uint>();
+        private CollectionIdProvider _idProvider;
         private Func<T[]> _getInitialValue;
 
         public StateValueSet() : this(default(Func<T[]>)) { }
@@ -71,32 +72,37 @@ namespace FofX.Stateful
         public StateValueSet(Func<T[]> getInitialValue) : base()
         {
             _getInitialValue = getInitialValue;
+            _idProvider = new CollectionIdProvider(_set.ContainsValue);
         }
 
         protected override void InitializeInternal()
         {
-            _set = _getInitialValue == null ?
-                new ObservableSet<T>(context) : new ObservableSet<T>(context, _getInitialValue());
-
-            _set.Subscribe(HandleInternalOperation, immediate: true);
-        }
-
-        protected override IReadOnlyList<StateOpArgs<T>> GetInitializationOperations()
-            => _set.ElementsWithIds.Select(x => new StateOpArgs<T>(this, OpType.Add, x.element, x.id)).ToArray();
-
-        private void HandleInternalOperation(IReadOnlyList<SetOpArgs<T>> ops)
-        {
-            if (ops == null)
+            if (_getInitialValue == null)
                 return;
 
-            foreach (var op in ops)
+            foreach (var element in _getInitialValue())
+                _set.Add(element, _idProvider.GetUnusedId());
+        }
+
+        protected override IEnumerable<StateSetOperation<T>> GetInitializationOperations()
+        {
+            foreach (var kvp in _set)
+                yield return new() { source = this, elementId = kvp.Value, element = kvp.Key, opType = OpType.Add };
+        }
+
+        protected override void SendStateOperation(ISetObserver<T> observer, StateSetOperation<T> operation)
+        {
+            if (operation.opType == OpType.Add)
             {
-                EnqueuePendingOperation(new StateOpArgs<T>(
-                    source: this,
-                    opType: op.isRemove ? OpType.Remove : OpType.Add,
-                    param: op.element,
-                    collectionElementId: op.id
-                ));
+                observer.OnAdd(operation.elementId, operation.element);
+            }
+            else if (operation.opType == OpType.Remove)
+            {
+                observer.OnRemove(operation.elementId, operation.element);
+            }
+            else
+            {
+                throw new Exception($"Unhandled op type {operation.opType}");
             }
         }
 
@@ -109,17 +115,44 @@ namespace FofX.Stateful
             return false;
         }
 
-        protected override void CopyToInternal(IStateNode copyTo)
-            => CopyTo((IStateValueSet<T>)copyTo);
+        private bool AddInternal(T element)
+        {
+            if (_set.ContainsKey(element))
+                return false;
+
+            var id = _idProvider.GetUnusedId();
+            _set.Add(element, id);
+            EnqueuePendingStateOperation(new() { source = this, elementId = id, element = element, opType = OpType.Add });
+            return true;
+        }
+
+        private bool RemoveInternal(T element)
+        {
+            if (!_set.TryGetValue(element, out var id))
+                return false;
+
+            _set.Remove(element);
+            EnqueuePendingStateOperation(new() { source = this, elementId = id, element = element, opType = OpType.Remove });
+            return true;
+        }
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            var target = (StateValueSet<T>)copyTo;
+
+            foreach (var toRemove in target.Except(_set.Keys).ToArray())
+                target.Remove(toRemove);
+
+            foreach (var toAdd in _set.Keys.Except(target).ToArray())
+                target.Add(toAdd);
+        }
 
         public bool Add(T element)
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            LogOperation(OpType.Add, element);
-
-            return _set.Add(element);
+            return AddInternal(element);
         }
 
         public bool Remove(T element)
@@ -127,20 +160,19 @@ namespace FofX.Stateful
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            LogOperation(OpType.Remove, element);
-
-            return _set.Remove(element);
+            return RemoveInternal(element);
         }
 
         public bool Contains(T element)
-            => _set.Contains(element);
+            => _set.ContainsKey(element);
 
         public void Clear()
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            _set.Clear();
+            foreach (var element in _set.Keys.ToArray())
+                Remove(element);
         }
 
         public override void Reset()
@@ -148,21 +180,15 @@ namespace FofX.Stateful
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            _set.Clear();
+            Clear();
 
             if (_getInitialValue != null)
-                _set.AddRange(_getInitialValue());
+            {
+                foreach (var element in _getInitialValue())
+                    AddInternal(element);
+            }
 
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
-        }
-
-        public void CopyTo(IStateValueSet<T> copyTo)
-        {
-            foreach (var toRemove in copyTo.Except(_set).ToArray())
-                copyTo.Remove(toRemove);
-
-            foreach (var toAdd in _set.Except(copyTo).ToArray())
-                copyTo.Add(toAdd);
         }
 
         public override void FromJSON(JSONNode json)
@@ -193,7 +219,7 @@ namespace FofX.Stateful
             JSONArray array = new JSONArray();
             SerializationPair<T> serializer = JSONSerialization.GetSerializer<T>();
 
-            foreach (T value in _set)
+            foreach (T value in _set.Keys)
                 array.Add(serializer.toJSON(value));
 
             return array;
@@ -201,117 +227,63 @@ namespace FofX.Stateful
 
         protected override void DisposeInternal()
         {
-            _set.Dispose();
             _deriveStream?.Dispose();
         }
 
         public void Derive(IListObservable<T> source)
         {
             _deriveStream = source.Subscribe(
-                onAdd: item => _set.Add(item),
-                onRemove: item => _set.Remove(item),
+                onAdd: item => AddInternal(item),
+                onRemove: item => RemoveInternal(item),
                 immediate: true
             );
         }
 
-        public IDisposable Subscribe(ISetObserver<T> observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        int index = 0;
-                        foreach (var pair in _set.ElementsWithIds)
-                        {
-                            observer.OnAdd(pair.id, pair.element);
-                            index++;
-                        }
+        bool IStateValueSet.Add(object element)
+        {
+            throw new NotImplementedException();
+        }
 
-                        return;
-                    }
+        bool IStateValueSet.Remove(object element)
+        {
+            throw new NotImplementedException();
+        }
 
-                    foreach (var op in ops)
-                    {
-                        if (op.opType == OpType.Add)
-                        {
-                            observer.OnAdd(op.collectionElementId, op.param);
-                        }
-                        else if (op.opType == OpType.Remove)
-                        {
-                            observer.OnRemove(op.collectionElementId, op.param);
-                        }
-                    }
-                },
-                onError: observer.OnError,
+        bool IStateValueSet.Contains(object element)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new SetObserver<T>(
+                onAdd: (id, element) => observer.OnNext(new StateSetOperation<T>() { source = this, elementId = id, element = element, opType = OpType.Add }),
+                onRemove: (id, element) => observer.OnNext(new StateSetOperation<T>() { source = this, elementId = id, element = element, opType = OpType.Remove }),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
 
-        public IDisposable Subscribe(ICollectionObserver<T> observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        int index = 0;
-                        foreach (var pair in _set.ElementsWithIds)
-                        {
-                            observer.OnAdd(pair.id, pair.element);
-                            index++;
-                        }
-
-                        return;
-                    }
-
-                    foreach (var op in ops)
-                    {
-                        if (op.opType == OpType.Add)
-                        {
-                            observer.OnAdd(op.collectionElementId, op.param);
-                        }
-                        else if (op.opType == OpType.Remove)
-                        {
-                            observer.OnRemove(op.collectionElementId, op.param);
-                        }
-                    }
-                },
-                onError: observer.OnError,
+        public IDisposable Subscribe(ISetObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new SetObserver<T>(
+                onAdd: (id, element) => observer.OnAdd(id, element),
+                onRemove: (id, element) => observer.OnRemove(id, element),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
 
-
-        public IDisposable Subscribe(ICollectionObserver observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        int index = 0;
-                        foreach (var pair in _set.ElementsWithIds)
-                        {
-                            observer.OnAdd(pair.id, pair.element);
-                            index++;
-                        }
-
-                        return;
-                    }
-
-                    foreach (var op in ops)
-                    {
-                        if (op.opType == OpType.Add)
-                        {
-                            observer.OnAdd(op.collectionElementId, op.param);
-                        }
-                        else if (op.opType == OpType.Remove)
-                        {
-                            observer.OnRemove(op.collectionElementId, op.param);
-                        }
-                    }
-                },
-                onError: observer.OnError,
+        public IDisposable Subscribe(ICollectionObserver observer, bool immediate, uint? priority)
+            => Subscribe(new SetObserver<T>(
+                onAdd: (id, element) => observer.OnAdd(id, element),
+                onRemove: (id, element) => observer.OnRemove(id, element),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(ICollectionObserver<T> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new SetObserver<T>(
+                onAdd: (id, element) => observer.OnAdd(id, element),
+                onRemove: (id, element) => observer.OnRemove(id, element),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
     }
 }

@@ -176,14 +176,50 @@ namespace FofX.Stateful.Tests
             Assert.AreEqual(0, state.dict.Count);
 
             disposed = false;
+
+            var children = new List<IStateNode>();
+
+            var childrenSubscription = state.dict.ObservableChildren().Subscribe(
+                onAdd: x => children.Add(x),
+                onRemove: x => children.Remove(x)
+            );
+
+            Assert.AreEqual(state.dict.children.ToList(), children);
+
+            state.dict.Add(1);
+            state.dict.Add(2);
+            state.dict.Add(3);
+            state.dict.Remove(3);
+            state.dict.Remove(5);
+            state.dict.Remove(1);
+
+            Assert.AreEqual(state.dict.children.ToList(), children);
+
+            state.dict.Clear();
+
+            Assert.AreEqual(state.dict.children.ToList(), children);
+
+            childrenSubscription.Dispose();
+
+            childrenSubscription = state.ObservableChildrenRecursive().Subscribe(
+                onAdd: x => children.Add(x),
+                onRemove: x => children.Remove(x)
+            );
+
+            state.dict.Add(1);
+            state.dict.Add(2);
+            state.dict.Add(3);
+
+            Assert.That(children, Is.EquivalentTo(EnumerateChildrenRecursive(state)));
+
+            childrenSubscription.Dispose();
+            disposed = false;
+            state.Reset();
+
             var observedOps = new List<(IStateNode source, OpType opType, object param, IStateNode child)>();
 
-            var streamAll = state.SubscribeOperationsRecursive(
-                context: context,
-                onOperation: ops =>
-                {
-                    observedOps.AddRange(ops.Select<IStateOperation, (IStateNode source, OpType opType, object param, IStateNode child)>(x => new(x.source, x.opType, x.param, x.child)));
-                },
+            var streamAll = state.ObservableCombineRecursive().Subscribe(
+                onNext: x => observedOps.Add(new(x.source, x.opType, x.param, x.child)),
                 onDispose: () => disposed = true,
                 onError: exc => exception = exc
             );
@@ -203,7 +239,6 @@ namespace FofX.Stateful.Tests
                 state.dict.Remove(10);
             });
 
-            Assert.AreEqual(5, observedOps.Count);
             Assert.AreEqual(false, disposed);
             Assert.AreEqual(null, exception);
 
@@ -212,7 +247,9 @@ namespace FofX.Stateful.Tests
                 new (IStateNode source, OpType opType, object param, IStateNode child)[]
                 {
                     new(state.dict, OpType.Add, 10, element10),
+                    new(element10, OpType.Set, null, null),
                     new(state.dict, OpType.Add, 100, state.dict[100]),
+                    new(state.dict[100], OpType.Set, null, null),
                     new(state.dict[100], OpType.Set, "me", null),
                     new(element10, OpType.Set, "you", null),
                     new(state.dict, OpType.Remove, 10, element10),
@@ -225,6 +262,14 @@ namespace FofX.Stateful.Tests
 
             Assert.AreEqual(0, observedOps.Count);
             Assert.AreEqual(true, disposed);
+        }
+
+        private IEnumerable<IStateNode> EnumerateChildrenRecursive(IStateNode state)
+        {
+            yield return state;
+
+            foreach (var nestedChild in state.children.SelectMany(x => EnumerateChildrenRecursive(x)))
+                yield return nestedChild;
         }
 
         private void AssertStateOpArgsEquals(IStateOperation args, IStateNode source, OpType opType, object param, IStateNode child)

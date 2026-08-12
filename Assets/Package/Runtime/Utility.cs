@@ -6,7 +6,7 @@ namespace FofX.Stateful
 {
     public static class Utility
     {
-        public static void SetFrom<T>(this IStateValueSet<T> set, IEnumerable<T> from)
+        public static void SetFrom<T>(this StateValueSet<T> set, IEnumerable<T> from)
         {
             if (from == null)
             {
@@ -24,7 +24,7 @@ namespace FofX.Stateful
                 set.Add(toAdd);
         }
 
-        public static void SetFrom<TKey, TValue>(this IStateDictionary<TKey, TValue> dict, TKey[] keys, Action<KeyValuePair<TKey, TValue>> onAdd = default)
+        public static void SetFrom<TKey, TValue>(this StateDictionary<TKey, TValue> dict, TKey[] keys, Action<KeyValuePair<TKey, TValue>> onAdd = default)
             where TValue : IStateNode, new()
         {
             if (keys == null)
@@ -46,7 +46,7 @@ namespace FofX.Stateful
                 dict.Remove(keyToRemove);
         }
 
-        public static void SetFrom<TKey, TState, TSource>(this IStateDictionary<TKey, TState> dict, Dictionary<TKey, TSource> source, bool refreshOldEntries = false, Action<TKey, TSource, TState> copy = default)
+        public static void SetFrom<TKey, TState, TSource>(this StateDictionary<TKey, TState> dict, Dictionary<TKey, TSource> source, bool refreshOldEntries = false, Action<TKey, TSource, TState> copy = default)
             where TState : IStateNode, new()
         {
             if (source == null)

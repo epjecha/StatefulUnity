@@ -19,48 +19,41 @@ namespace FofX.Stateful
         void RemoveAt(int index);
         int IndexOf(IStateNode node);
         void Clear();
-        void CopyTo(IStateList copyTo);
     }
 
-    public interface IStateList<T> : IListObservable<T>, IStateList, IEnumerable<T> where T : IStateNode, new()
+    public struct StateListOperation<T> : IStateOperation where T : IStateNode
     {
-        new T this[int index] { get; }
-        new T Add();
-        new T Insert(int index);
-        bool Remove(T element);
-        new void RemoveAt(int index);
-        int IndexOf(T value);
-        void CopyTo(IStateList<T> copyTo);
+        public IStateNode source { get; set; }
+        public OpType opType { get; set; }
+        public T element { get; set; }
+        public uint elementId { get; set; }
+        public int index { get; set; }
 
-        Type IStateList.itemType => typeof(T);
-        IStateNode IStateList.this[int index] => this[index];
+        object IStateOperation.param => index;
+        public IStateNode child => element;
 
-        IStateNode IStateList.Add()
-            => Add();
-
-        IStateNode IStateList.Insert(int index)
-            => Insert(index);
-
-        bool IStateList.Remove(IStateNode element)
-            => Remove((T)element);
-
-        void IStateList.RemoveAt(int index)
-            => RemoveAt(index);
-
-        int IStateList.IndexOf(IStateNode node)
-            => IndexOf((T)node);
-
-        void IStateList.CopyTo(IStateList copyTo)
-            => CopyTo(copyTo);
+        public override string ToString()
+        {
+            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={index}";
+        }
     }
 
-    public class StateList<T> : StateNode<T>, IStateList<T> where T : IStateNode, new()
+    public class StateList<T> : StateNode<IListObserver<T>, StateListOperation<T>>,
+        IStateList,
+        IListObservable<T>,
+        IEnumerable<T>
+        where T : IStateNode, new()
     {
         public int Count => _list.Count;
         public T this[int index] => _list[index];
         public override int childCount => _list.Count;
         public override IEnumerable<IStateNode> children => _list.Select(x => (IStateNode)x);
         public override bool derived => _deriveStream != null;
+
+        public Type itemType => throw new NotImplementedException();
+
+        IStateNode IStateList.this[int index] => this[index];
+
         private IDisposable _deriveStream;
 
         IEnumerator<T> IEnumerable<T>.GetEnumerator()
@@ -69,52 +62,53 @@ namespace FofX.Stateful
         IEnumerator IEnumerable.GetEnumerator()
             => ((IEnumerable)_list).GetEnumerator();
 
-        private ObservableList<T> _list;
+        private List<T> _list = new List<T>();
+        private List<uint> _ids = new List<uint>();
         private Func<T[]> _getInitialValue;
+        private CollectionIdProvider _idProvider;
 
         public StateList() : this(default) { }
 
         public StateList(Func<T[]> getInitialValue) : base()
         {
             _getInitialValue = getInitialValue;
+            _idProvider = new CollectionIdProvider(_ids.Contains);
         }
 
         protected override void InitializeInternal()
         {
-            _list = _getInitialValue == null ?
-                new ObservableList<T>(context) : new ObservableList<T>(context, _getInitialValue());
-
-            _list.Subscribe(HandleInternalOperation, immediate: true);
-        }
-
-        protected override IReadOnlyList<StateOpArgs<T>> GetInitializationOperations()
-        {
-            var ops = new StateOpArgs<T>[_list.Count];
-
-            for (int i = 0; i < _list.Count; i++)
-            {
-                var element = _list.ElementAndIdAt(i);
-                ops[i] = new StateOpArgs<T>(this, OpType.Add, element.value, element.id, i, element.value);
-            }
-
-            return ops;
-        }
-
-        private void HandleInternalOperation(IReadOnlyList<ListOpArgs<T>> ops)
-        {
-            if (ops == null)
+            if (_getInitialValue == null)
                 return;
 
-            foreach (var op in ops)
+            var initValues = _getInitialValue();
+            foreach (var element in _getInitialValue())
             {
-                EnqueuePendingOperation(new StateOpArgs<T>(
-                    source: this,
-                    opType: op.isRemove ? OpType.Remove : OpType.Add,
-                    param: op.element,
-                    collectionElementId: op.id,
-                    index: op.index,
-                    child: op.element
-                ));
+                var id = _idProvider.GetUnusedId();
+
+                _list.Add(element);
+                _ids.Add(id);
+            }
+        }
+
+        protected override IEnumerable<StateListOperation<T>> GetInitializationOperations()
+        {
+            for (int i = 0; i < _list.Count; i++)
+                yield return new StateListOperation<T>() { source = this, index = i, elementId = _ids[i], opType = OpType.Add };
+        }
+
+        protected override void SendStateOperation(IListObserver<T> observer, StateListOperation<T> operation)
+        {
+            if (operation.opType == OpType.Add)
+            {
+                observer.OnAdd(operation.elementId, operation.index, operation.element);
+            }
+            else if (operation.opType == OpType.Remove)
+            {
+                observer.OnRemove(operation.elementId, operation.index, operation.element);
+            }
+            else
+            {
+                throw new Exception($"Unhandled op type {operation.opType}");
             }
         }
 
@@ -134,8 +128,41 @@ namespace FofX.Stateful
             return true;
         }
 
-        protected override void CopyToInternal(IStateNode copyTo)
-            => CopyTo((IStateList<T>)copyTo);
+        private void InsertInternal(int index, T element)
+        {
+            if (element.parent == null)
+            {
+                element.Initialize(this, index.ToString());
+                element.PostInitialize();
+            }
+
+            var id = _idProvider.GetUnusedId();
+
+            _list.Insert(index, element);
+            _ids.Insert(index, id);
+
+            for (int i = index + 1; i < _list.Count; i++)
+                _list[i].Rename(i.ToString());
+
+            EnqueuePendingStateOperation(new() { source = this, opType = OpType.Add, elementId = id, index = index, element = element });
+        }
+
+        private void RemoveAtInternal(int index)
+        {
+            var element = _list[index];
+            var id = _ids[index];
+
+            _list.RemoveAt(index);
+            _ids.RemoveAt(index);
+
+            for (int i = index; i < _list.Count; i++)
+                _list[i].Rename(i.ToString());
+
+            if (element.parent == this)
+                element.Dispose();
+
+            EnqueuePendingStateOperation(new() { source = this, opType = OpType.Remove, elementId = id, index = index, element = element });
+        }
 
         public T Add()
             => Insert(_list.Count);
@@ -146,15 +173,7 @@ namespace FofX.Stateful
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
             T element = new T();
-            element.Initialize(this, index.ToString());
-            element.PostInitialize();
-
-            _list.Insert(index, element);
-
-            for (int i = index + 1; i < _list.Count; i++)
-                _list[i].Rename(i.ToString());
-
-            LogOperation(OpType.Add, index, element);
+            InsertInternal(index, element);
 
             return element;
         }
@@ -169,7 +188,7 @@ namespace FofX.Stateful
             if (index == -1)
                 return false;
 
-            RemoveAt(index);
+            RemoveAtInternal(index);
             return true;
         }
 
@@ -178,15 +197,7 @@ namespace FofX.Stateful
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            var element = _list[index];
-            _list.RemoveAt(index);
-
-            for (int i = index; i < _list.Count; i++)
-                _list[i].Rename(i.ToString());
-
-            LogOperation(OpType.Remove, index, element);
-
-            element.Dispose();
+            RemoveAtInternal(index);
         }
 
         public bool Contains(T element)
@@ -200,7 +211,22 @@ namespace FofX.Stateful
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            _list.Clear();
+            for (int i = _list.Count - 1; i >= 0; i--)
+                RemoveAtInternal(i);
+        }
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            var target = (StateList<T>)copyTo;
+
+            while (target.Count < Count)
+                target.Add();
+
+            while (target.Count > Count)
+                target.RemoveAt(target.Count - 1);
+
+            for (int i = 0; i < Count; i++)
+                _list[i].CopyTo(target[i]);
         }
 
         public override void Reset()
@@ -208,7 +234,7 @@ namespace FofX.Stateful
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            _list.Clear();
+            Clear();
 
             if (_getInitialValue != null)
             {
@@ -217,18 +243,6 @@ namespace FofX.Stateful
             }
 
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
-        }
-
-        public void CopyTo(IStateList<T> copyTo)
-        {
-            while (copyTo.Count < Count)
-                copyTo.Add();
-
-            while (copyTo.Count > Count)
-                copyTo.RemoveAt(copyTo.Count - 1);
-
-            for (int i = 0; i < Count; i++)
-                _list[i].CopyTo(copyTo[i]);
         }
 
         public override void FromJSON(JSONNode json)
@@ -282,168 +296,54 @@ namespace FofX.Stateful
         public void Derive(IListObservable<T> source)
         {
             _deriveStream = source.Subscribe(
-                onAdd: (index, element) =>
-                {
-                    _list.Insert(index, element);
-
-                    if (element.parent != null)
-                        return;
-
-                    element.Initialize(this, index.ToString());
-                    element.PostInitialize();
-
-                    for (int i = index + 1; i < _list.Count; i++)
-                        _list[i].Rename(i.ToString());
-                },
-                onRemove: (index, item) =>
-                {
-                    var element = _list[index];
-                    _list.RemoveAt(index);
-
-                    if (element.parent != this)
-                        return;
-
-                    for (int i = index; i < _list.Count; i++)
-                        _list[i].Rename(i.ToString());
-
-                    LogOperation(OpType.Remove, index, element);
-
-                    element.Dispose();
-                },
+                onAdd: InsertInternal,
+                onRemove: (index, _) => RemoveAtInternal(index),
                 immediate: true
             );
         }
 
-        public IDisposable Subscribe(IListObserver<T> observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        int index = 0;
-                        foreach (var pair in _list.ElementsWithIds)
-                        {
-                            observer.OnAdd(pair.id, index, pair.element);
-                            index++;
-                        }
+        IStateNode IStateList.Add()
+            => Add();
 
-                        return;
-                    }
+        IStateNode IStateList.Insert(int index)
+            => Insert(index);
 
-                    foreach (var op in ops)
-                    {
-                        if (op.opType == OpType.Add)
-                        {
-                            observer.OnAdd(op.collectionElementId, op.index, op.param);
-                        }
-                        else if (op.opType == OpType.Remove)
-                        {
-                            observer.OnRemove(op.collectionElementId, op.index, op.param);
-                        }
-                    }
-                },
-                onError: observer.OnError,
+        bool IStateList.Remove(IStateNode node)
+            => Remove((T)node);
+
+        int IStateList.IndexOf(IStateNode node)
+            => IndexOf((T)node);
+
+        public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ListObserver<T>(
+                onAdd: (id, index, element) => observer.OnNext(new StateListOperation<T>() { source = this, elementId = id, index = index, element = element, opType = OpType.Add }),
+                onRemove: (id, index, element) => observer.OnNext(new StateListOperation<T>() { source = this, elementId = id, index = index, element = element, opType = OpType.Remove }),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
 
-        public IDisposable Subscribe(ICollectionObserver<T> observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        int index = 0;
-                        foreach (var pair in _list.ElementsWithIds)
-                        {
-                            observer.OnAdd(pair.id, pair.element);
-                            index++;
-                        }
-
-                        return;
-                    }
-
-                    foreach (var op in ops)
-                    {
-                        if (op.opType == OpType.Add)
-                        {
-                            observer.OnAdd(op.collectionElementId, op.param);
-                        }
-                        else if (op.opType == OpType.Remove)
-                        {
-                            observer.OnRemove(op.collectionElementId, op.param);
-                        }
-                    }
-                },
-                onError: observer.OnError,
+        public IDisposable Subscribe(IListObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ListObserver<T>(
+                onAdd: (id, index, element) => observer.OnAdd(id, index, element),
+                onRemove: (id, index, element) => observer.OnRemove(id, index, element),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
 
-        public IDisposable Subscribe(IListObserver observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        int index = 0;
-                        foreach (var pair in _list.ElementsWithIds)
-                        {
-                            observer.OnAdd(pair.id, index, pair.element);
-                            index++;
-                        }
-
-                        return;
-                    }
-
-                    foreach (var op in ops)
-                    {
-                        if (op.opType == OpType.Add)
-                        {
-                            observer.OnAdd(op.collectionElementId, op.index, op.param);
-                        }
-                        else if (op.opType == OpType.Remove)
-                        {
-                            observer.OnRemove(op.collectionElementId, op.index, op.param);
-                        }
-                    }
-                },
-                onError: observer.OnError,
+        public IDisposable Subscribe(ICollectionObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ListObserver<T>(
+                onAdd: (id, index, element) => observer.OnAdd(id, element),
+                onRemove: (id, index, element) => observer.OnRemove(id, element),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
 
-        public IDisposable Subscribe(ICollectionObserver observer)
-            => Subscribe(new Observer<StateOpArgs<T>>(
-                onOperation: ops =>
-                {
-                    if (ops == null)
-                    {
-                        int index = 0;
-                        foreach (var pair in _list.ElementsWithIds)
-                        {
-                            observer.OnAdd(pair.id, pair.element);
-                            index++;
-                        }
-
-                        return;
-                    }
-
-                    foreach (var op in ops)
-                    {
-                        if (op.opType == OpType.Add)
-                        {
-                            observer.OnAdd(op.collectionElementId, op.param);
-                        }
-                        else if (op.opType == OpType.Remove)
-                        {
-                            observer.OnRemove(op.collectionElementId, op.param);
-                        }
-                    }
-                },
-                onError: observer.OnError,
+        public IDisposable Subscribe(ICollectionObserver<T> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ListObserver<T>(
+                onAdd: (id, index, element) => observer.OnAdd(id, element),
+                onRemove: (id, index, element) => observer.OnRemove(id, element),
                 onDispose: observer.OnDispose,
-                immediate: observer.immediate
-            ));
+                onError: observer.OnError
+            ), immediate, priority);
     }
 }

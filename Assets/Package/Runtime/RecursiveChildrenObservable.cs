@@ -1,54 +1,46 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using ObserveThing;
 
 namespace FofX.Stateful
 {
     public class RecursiveChildrenObservable : IDisposable
     {
-        private class EntryData
-        {
-            public uint id;
-            public IDisposable subscription;
-        }
-
         private IDisposable _stream;
-        private ISetObserver<IStateNode> _receiver;
-        private CollectionIdProvider _idProvider;
-        private Dictionary<IStateNode, EntryData> _entries = new Dictionary<IStateNode, EntryData>();
+        private ISetOperand<IStateNode> _operand;
+        private Dictionary<IStateNode, IDisposable> _subscriptions = new Dictionary<IStateNode, IDisposable>();
         private bool _disposed;
+        private uint _priority;
 
-        public RecursiveChildrenObservable(IStateNode source, ISetObserver<IStateNode> receiver)
+        public RecursiveChildrenObservable(IStateNode source, ISetOperand<IStateNode> operand)
         {
-            _idProvider = new CollectionIdProvider(x => _entries.Values.Select(x => x.id).Contains(x));
-            _receiver = receiver;
+            _operand = operand;
             _stream = source.Subscribe(onDispose: Dispose, immediate: true);
+            _priority = source.context.AllocateObserverPriority();
             SubscribeRecursive(source);
         }
 
         private void SubscribeRecursive(IStateNode node)
         {
-            var entryData = new EntryData() { id = _idProvider.GetUnusedId() };
-            _entries.Add(node, entryData);
+            _subscriptions.Add(node, null);
+            _operand.Add(node);
 
-            entryData.subscription = node.ObservableChildren().Subscribe(
+            _subscriptions[node] = node.ObservableChildren().Subscribe(
                 onAdd: SubscribeRecursive,
                 onRemove: UnsubscribeRecursive,
-                onError: _receiver.OnError,
-                immediate: true
+                onError: _operand.OnError,
+                immediate: true,
+                priority: _priority
             );
-
-            _receiver.OnAdd(entryData.id, node);
         }
 
         private void UnsubscribeRecursive(IStateNode node)
         {
-            var entryData = _entries[node];
-            _entries.Remove(node);
-            entryData.subscription?.Dispose();
+            var subscription = _subscriptions[node];
+            _subscriptions.Remove(node);
+            subscription?.Dispose();
 
-            _receiver.OnRemove(entryData.id, node);
+            _operand.Remove(node);
 
             foreach (var child in node.children)
                 UnsubscribeRecursive(child);
@@ -63,10 +55,10 @@ namespace FofX.Stateful
 
             _stream.Dispose();
 
-            foreach (var entry in _entries.Values)
-                entry.subscription?.Dispose();
+            foreach (var entry in _subscriptions.Values)
+                entry?.Dispose();
 
-            _receiver.OnDispose();
+            _operand.OnDisposed();
         }
     }
 }

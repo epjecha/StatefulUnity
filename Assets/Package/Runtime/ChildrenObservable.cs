@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using ObserveThing;
 
 namespace FofX.Stateful
@@ -7,57 +6,37 @@ namespace FofX.Stateful
     public class ChildrenObservable : IDisposable
     {
         private IDisposable _sourceSubscription;
-        private ISetObserver<IStateNode> _receiver;
-        private CollectionIdProvider _idProvider;
-        private Dictionary<IStateNode, uint> _children = new Dictionary<IStateNode, uint>();
+        private ISetOperand<IStateNode> _operand;
         private bool _initializing;
         private bool _disposed;
 
-        public ChildrenObservable(IStateNode source, ISetObserver<IStateNode> receiver)
+        public ChildrenObservable(IStateNode source, ISetOperand<IStateNode> operand)
         {
-            _idProvider = new CollectionIdProvider(_children.ContainsValue);
-            _receiver = receiver;
+            _operand = operand;
 
             _initializing = true;
-            _sourceSubscription = source.Subscribe(onOperation: HandleSourceChanged, onDispose: Dispose, immediate: true);
+            _sourceSubscription = source.Subscribe(onNext: HandleSourceChanged, onDispose: Dispose, immediate: true);
             _initializing = false;
 
             foreach (var child in source.children)
-            {
-                var id = _idProvider.GetUnusedId();
-                _children.Add(child, id);
-                receiver.OnAdd(id, child);
-            }
+                _operand.Add(child);
         }
 
-        private void HandleSourceChanged(IReadOnlyList<IStateOperation> operations)
+        private void HandleSourceChanged(IStateOperation operation)
         {
             if (_initializing)
                 return;
 
-            foreach (var op in operations)
+            if (operation.child == null)
+                return;
+
+            if (operation.opType == OpType.Add)
             {
-                if (op.opType == OpType.Dispose)
-                {
-                    Dispose();
-                    break;
-                }
-
-                if (op.child == null)
-                    continue;
-
-                if (op.opType == OpType.Add)
-                {
-                    var id = _idProvider.GetUnusedId();
-                    _children.Add(op.child, id);
-                    _receiver.OnAdd(id, op.child);
-                }
-                else if (op.opType == OpType.Remove)
-                {
-                    var id = _children[op.child];
-                    _children.Remove(op.child);
-                    _receiver.OnRemove(id, op.child);
-                }
+                _operand.Add(operation.child);
+            }
+            else if (operation.opType == OpType.Remove)
+            {
+                _operand.Remove(operation.child);
             }
         }
 
@@ -69,7 +48,7 @@ namespace FofX.Stateful
             _disposed = true;
 
             _sourceSubscription?.Dispose();
-            _receiver.OnDispose();
+            _operand.OnDisposed();
         }
     }
 }
