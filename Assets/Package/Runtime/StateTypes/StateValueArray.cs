@@ -17,39 +17,44 @@ namespace FofX.Stateful
         void Clear();
     }
 
-    public class StateValueArray<T> : StateNode<IValueObserver<IReadOnlyList<T>>, StateValueOperation<IReadOnlyList<T>>>,
+    public class StateValueArray<T> : ObservableValueBase<IReadOnlyList<T>>,
         IStateValueArray,
         IValueObservable<IReadOnlyList<T>>,
         IEnumerable<T>
     {
-        public int count => _values.Count;
-        public T this[int index] => _values[index];
+        public string nodeName { get; private set; }
+        public string nodePath { get; private set; }
+        public ILogger logger { get; private set; }
+        public IStateNode root { get; private set; }
+        public IStateNode parent { get; private set; }
+        public bool initialized { get; private set; }
+        public bool derived => _deriveStream != null;
 
-        public override int childCount => 0;
-        public override IEnumerable<IStateNode> children => EmptyChildren();
-        public override bool derived => _deriveStream != null;
+        public int count => _value.Count;
+        public T this[int index] => _value[index];
+
+        int IStateNode.childCount => 0;
+        IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
 
         Type IStateValueArray.elementType => typeof(T);
 
         private IDisposable _deriveStream;
 
         IEnumerator<T> IEnumerable<T>.GetEnumerator()
-            => _values.GetEnumerator();
+            => _value.GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator()
-            => _values.GetEnumerator();
+            => _value.GetEnumerator();
 
-        private List<T> _values = new List<T>();
-        private IReadOnlyList<T> _externalList;
-        private Func<T[]> _getInitialValue;
+        private Action<StateValueArray<T>> _initializer;
 
-        public StateValueArray() : this(default(Func<T[]>)) { }
+        public StateValueArray() : this(default(Action<StateValueArray<T>>)) { }
 
-        public StateValueArray(T[] value) : this(() => value) { }
-        public StateValueArray(Func<T[]> getInitialValue) : base()
+        public StateValueArray(T[] value) : this(x => x.SetValue(value)) { }
+        public StateValueArray(Action<StateValueArray<T>> initializer) : base(null)
         {
-            _getInitialValue = getInitialValue;
-            _externalList = _values.AsReadOnly();
+            SetValueInternal(new T[0]);
+            _initializer = initializer;
         }
 
         private IEnumerable<IStateNode> EmptyChildren()
@@ -57,44 +62,39 @@ namespace FofX.Stateful
             yield break;
         }
 
-        protected override void InitializeInternal()
+        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
         {
-            if (_getInitialValue == null)
-                return;
-
-            _values.AddRange(_getInitialValue());
+            this.context = context;
+            root = this;
+            this.logger = logger;
+            nodeName = name;
+            nodePath = name;
+            _initializer?.Invoke(this);
+            initialized = true;
+            ((IStateNode)this).PostInitialize();
         }
 
-        protected override IEnumerable<StateValueOperation<IReadOnlyList<T>>> GetInitializationOperations()
+        public void Initialize(IStateNode parent, string name)
         {
-            yield return new StateValueOperation<IReadOnlyList<T>>() { source = this, value = _externalList };
+            if (name == null)
+                throw new ArgumentNullException(nameof(name));
+
+            if (initialized)
+                throw new Exception($"{nodePath} has already been initialized");
+
+            context = parent.context;
+            root = parent.root;
+            this.parent = parent;
+            logger = parent.logger;
+            nodeName = name;
+            nodePath = $"{parent.nodePath}/{nodeName}";
+            _initializer?.Invoke(this);
+            initialized = true;
         }
 
-        protected override void SendStateOperation(IValueObserver<IReadOnlyList<T>> observer, StateValueOperation<IReadOnlyList<T>> operation)
-        {
-            observer.OnNext(operation.value);
-        }
+        void IStateNode.PostInitialize() { }
 
-        protected override IStateNode GetChildInternal(string childName)
-            => throw new NotImplementedException();
-
-        protected override bool TryGetChildInternal(string childName, out IStateNode child)
-        {
-            child = default;
-            return false;
-        }
-
-        private void SetValueInternal(IEnumerable<T> value)
-        {
-            _values.Clear();
-
-            if (value != null)
-                _values.AddRange(value);
-
-            EnqueuePendingStateOperation(new() { source = this, value = _externalList });
-        }
-
-        public void SetValue(IEnumerable<T> value)
+        public void SetValue(T[] value)
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
@@ -104,21 +104,25 @@ namespace FofX.Stateful
 
         public void Clear()
         {
-            SetValueInternal(null);
+            if (derived)
+                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
+
+            SetValueInternal(new T[0]);
         }
 
-        public override void CopyTo(IStateNode copyTo)
+        public void CopyTo(IStateNode copyTo)
         {
             var target = (StateValueArray<T>)copyTo;
-            target.SetValue(_externalList);
+            target.SetValue(_value.ToArray());
         }
 
-        public override void Reset()
+        public void Reset()
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            SetValueInternal(_getInitialValue == null ? null : _getInitialValue());
+            SetValueInternal(new T[0]);
+            _initializer?.Invoke(this);
 
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
@@ -128,18 +132,18 @@ namespace FofX.Stateful
             _deriveStream?.Dispose();
         }
 
-        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
+        public JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             JSONArray json = new JSONArray();
             var serializer = JSONSerialization.GetSerializer<T>();
 
-            foreach (var item in _values)
+            foreach (var item in _value)
                 json.Add(serializer.toJSON(item));
 
             return json;
         }
 
-        public override void FromJSON(JSONNode json)
+        public void FromJSON(JSONNode json)
         {
             if (derived)
             {
@@ -148,7 +152,7 @@ namespace FofX.Stateful
             }
 
             var serializer = JSONSerialization.GetSerializer<T>();
-            SetValueInternal(((JSONArray)json).Linq.Select(x => serializer.fromJSON(x)));
+            SetValueInternal(((JSONArray)json).Linq.Select(x => serializer.fromJSON(x)).ToArray());
         }
 
         public void Derive(IValueObservable<IReadOnlyList<T>> source)
@@ -159,19 +163,27 @@ namespace FofX.Stateful
             );
         }
 
+        public void Rename(string name)
+        {
+            nodeName = name;
+            nodePath = parent == null ? name : $"{parent}/{name}";
+        }
+
+        public IStateNode GetChild(string name)
+            => throw new NotImplementedException();
+
+        public bool TryGetChild(string name, out IStateNode child)
+        {
+            child = default;
+            return false;
+        }
+
         void IStateValueArray.SetValue(IEnumerable values)
             => SetValue(values.Cast<T>().ToArray());
 
-        public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ValueObserver<IReadOnlyList<T>>(
                 onNext: x => observer.OnNext(new StateValueOperation<IReadOnlyList<T>>() { source = this, value = x }),
-                onDispose: observer.OnDispose,
-                onError: observer.OnError
-            ), immediate, priority);
-
-        public IDisposable Subscribe(IValueObserver observer, bool immediate = false, uint? priority = null)
-            => Subscribe(new ValueObserver<IReadOnlyList<T>>(
-                onNext: observer.OnNext,
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);

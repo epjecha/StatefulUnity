@@ -184,7 +184,7 @@ namespace FofX.Stateful.Tests
                 onRemove: x => children.Remove(x)
             );
 
-            Assert.AreEqual(state.dict.children.ToList(), children);
+            Assert.AreEqual(state.dict.values.ToList(), children);
 
             state.dict.Add(1);
             state.dict.Add(2);
@@ -193,11 +193,11 @@ namespace FofX.Stateful.Tests
             state.dict.Remove(5);
             state.dict.Remove(1);
 
-            Assert.AreEqual(state.dict.children.ToList(), children);
+            Assert.AreEqual(state.dict.values.ToList(), children);
 
             state.dict.Clear();
 
-            Assert.AreEqual(state.dict.children.ToList(), children);
+            Assert.AreEqual(state.dict.values.ToList(), children);
 
             childrenSubscription.Dispose();
 

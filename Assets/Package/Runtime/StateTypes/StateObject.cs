@@ -22,17 +22,55 @@ namespace FofX.Stateful
         }
     }
 
-    public class StateObject : StateNode<IObserverBase, StateObjectOperation>
+    public class StateObject : ObservableBase<IObserverBase, StateObjectOperation>, IStateNode
     {
-        public override int childCount => _children.Count;
-        public override IEnumerable<IStateNode> children => _children.Values;
-        public override bool derived => false;
+        public string nodeName { get; private set; }
+        public string nodePath { get; private set; }
+        public ILogger logger { get; private set; }
+        public IStateNode root { get; private set; }
+        public IStateNode parent { get; private set; }
+        public bool initialized { get; private set; }
+
+        public int childCount => _children.Count;
+        public IEnumerable<IStateNode> children => _children.Values;
+        public bool derived => false;
+
 
         private Dictionary<string, IStateNode> _children = new Dictionary<string, IStateNode>();
 
-        public StateObject() : base() { }
+        public StateObject() : base(null) { }
 
-        protected override void InitializeInternal()
+        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
+        {
+            this.context = context;
+            root = this;
+            this.logger = logger;
+            nodeName = name;
+            nodePath = name;
+            InitializeInternal();
+            initialized = true;
+            ((IStateNode)this).PostInitialize();
+        }
+
+        public void Initialize(IStateNode parent, string name)
+        {
+            if (name == null)
+                throw new ArgumentNullException(nameof(name));
+
+            if (initialized)
+                throw new Exception($"{nodePath} has already been initialized");
+
+            context = parent.context;
+            root = parent.root;
+            this.parent = parent;
+            logger = parent.logger;
+            nodeName = name;
+            nodePath = $"{parent.nodePath}/{nodeName}";
+            InitializeInternal();
+            initialized = true;
+        }
+
+        private void InitializeInternal()
         {
             var type = GetType();
             while (type != typeof(StateObject))
@@ -43,8 +81,8 @@ namespace FofX.Stateful
                     .GetProperties(BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Public)
                     .Where(x => x.SetMethod != null &&
                         typeof(IStateNode).IsAssignableFrom(x.PropertyType) &&
-                        x.Name != nameof(parent) &&
-                        x.Name != nameof(root)
+                        x.Name != nameof(IStateNode.parent) &&
+                        x.Name != nameof(IStateNode.root)
                     );
 
                 foreach (var property in properties)
@@ -64,18 +102,22 @@ namespace FofX.Stateful
             yield break;
         }
 
-        protected override void SendStateOperation(IObserverBase observer, StateObjectOperation operation)
+        protected override void SendOperation(IObserverBase observer, StateObjectOperation operation)
         {
             throw new NotImplementedException();
         }
 
-        protected override IStateNode GetChildInternal(string childName)
-            => _children[childName];
+        protected virtual void PostInitializeInternal() { }
 
-        protected override bool TryGetChildInternal(string childName, out IStateNode child)
-            => _children.TryGetValue(childName, out child);
+        void IStateNode.PostInitialize()
+        {
+            PostInitializeInternal();
 
-        public override void Reset()
+            foreach (var child in children)
+                child.PostInitialize();
+        }
+
+        public void Reset()
         {
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
 
@@ -96,7 +138,7 @@ namespace FofX.Stateful
             }
         }
 
-        public override void FromJSON(JSONNode json)
+        public void FromJSON(JSONNode json)
         {
             if (derived)
             {
@@ -114,7 +156,7 @@ namespace FofX.Stateful
                 child.FromJSON(json[child.nodeName]);
         }
 
-        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
+        public JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             JSONObject obj = new JSONObject();
 
@@ -130,13 +172,27 @@ namespace FofX.Stateful
                 child.Dispose();
         }
 
-        public override void CopyTo(IStateNode copyTo)
+        public void CopyTo(IStateNode copyTo)
         {
             foreach (var child in children)
                 child.CopyTo(copyTo.GetChild(child.nodeName));
         }
 
-        public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+        public void Rename(string name)
+        {
+            nodeName = name;
+            nodePath = parent == null ? name : $"{parent}/{name}";
+            foreach (var child in _children.Values)
+                child.Rename(child.nodeName);
+        }
+
+        public IStateNode GetChild(string childName)
+            => _children[childName];
+
+        public bool TryGetChild(string childName, out IStateNode child)
+            => _children.TryGetValue(childName, out child);
+
+        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe((IObserverBase)new Observer<IStateOperation>());
     }
 }

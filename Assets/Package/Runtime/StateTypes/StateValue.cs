@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 
 using ObserveThing;
 using SimpleJSON;
@@ -31,10 +30,18 @@ namespace FofX.Stateful
         Type valueType { get; }
     }
 
-    public class StateValue<T> : StateNode<IValueObserver<T>, StateValueOperation<T>>,
+    public class StateValue<T> : ObservableValueBase<T>,
         IStateValue,
         IValueObservable<T>
     {
+        public string nodeName { get; private set; }
+        public string nodePath { get; private set; }
+        public IStateNode root { get; private set; }
+        public ILogger logger { get; private set; }
+        public IStateNode parent { get; private set; }
+        public bool initialized { get; private set; }
+        public bool derived => _deriveStream != null;
+
         public T value
         {
             get => _value;
@@ -43,86 +50,86 @@ namespace FofX.Stateful
                 if (derived)
                     throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-                SetInternal(value);
+                SetValueInternal(value);
             }
         }
 
-        public override int childCount => 0;
-        public override IEnumerable<IStateNode> children => EmptyChildren();
-        public override bool derived => _deriveStream != null;
+        public Type valueType => typeof(T);
 
         object IStateValue.value { get => value; set => this.value = (T)value; }
 
-        public Type valueType => typeof(T);
+        int IStateNode.childCount => 0;
+        IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
 
         private IDisposable _deriveStream;
 
-        private T _value;
-        private Func<T> _getInitialValue;
+        private Action<StateValue<T>> _initializer;
 
         private IEnumerable<IStateNode> EmptyChildren()
         {
             yield break;
         }
 
-        public StateValue() : this(default(Func<T>)) { }
+        public StateValue() : this(default(Action<StateValue<T>>)) { }
 
-        public StateValue(T value) : this(() => value) { }
-        public StateValue(Func<T> getInitialValue) : base()
+        public StateValue(T value) : this(x => x.value = value) { }
+        public StateValue(Action<StateValue<T>> initializer) : base(null)
         {
-            _getInitialValue = getInitialValue;
+            _initializer = initializer;
         }
 
-        protected override void InitializeInternal()
+        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
         {
-            value = _getInitialValue == null ? default : _getInitialValue();
+            this.context = context;
+            root = this;
+            this.logger = logger;
+            nodeName = name;
+            nodePath = name;
+            _initializer?.Invoke(this);
+            initialized = true;
+            ((IStateNode)this).PostInitialize();
         }
 
-        protected override IEnumerable<StateValueOperation<T>> GetInitializationOperations()
+        public void Initialize(IStateNode parent, string name)
         {
-            yield return new StateValueOperation<T>() { source = this, value = value };
+            if (name == null)
+                throw new ArgumentNullException(nameof(name));
+
+            if (initialized)
+                throw new Exception($"{nodePath} has already been initialized");
+
+            context = parent.context;
+            root = parent.root;
+            this.parent = parent;
+            logger = parent.logger;
+            nodeName = name;
+            nodePath = $"{parent.nodePath}/{nodeName}";
+            _initializer?.Invoke(this);
+            initialized = true;
         }
 
-        protected override void SendStateOperation(IValueObserver<T> observer, StateValueOperation<T> operation)
-        {
-            if (operation.opType == OpType.Set)
-            {
-                observer.OnNext(operation.value);
-            }
-            else
-            {
-                throw new Exception($"Unhandled op type {operation.opType}");
-            }
-        }
+        void IStateNode.PostInitialize() { }
 
-        protected override IStateNode GetChildInternal(string childName)
-            => throw new NotImplementedException();
-
-        protected override bool TryGetChildInternal(string childName, out IStateNode child)
-        {
-            child = default;
-            return false;
-        }
-
-        public override void CopyTo(IStateNode copyTo)
+        public void CopyTo(IStateNode copyTo)
         {
             ((StateValue<T>)copyTo).value = value;
         }
 
-        public override void Reset()
+        public void Reset()
         {
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            value = _getInitialValue == null ? default : _getInitialValue();
+            value = default;
+            _initializer?.Invoke(this);
 
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
 
-        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
+        public JSONNode ToJSON(Func<IStateNode, bool> filter)
             => JSONSerialization.ToJSON(value);
 
-        public override void FromJSON(JSONNode json)
+        public void FromJSON(JSONNode json)
         {
             if (derived)
             {
@@ -144,33 +151,32 @@ namespace FofX.Stateful
             _deriveStream?.Dispose();
         }
 
-        private void SetInternal(T value)
-        {
-            if (Equals(_value, value))
-                return;
-
-            _value = value;
-            EnqueuePendingStateOperation(new() { source = this, value = _value });
-        }
-
         public void Derive(IValueObservable<T> source)
         {
             _deriveStream = source.Subscribe(
-                SetInternal,
+                x => value = x,
                 immediate: true
             );
         }
 
-        public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+        void IStateNode.Rename(string name)
+        {
+            nodeName = name;
+            nodePath = parent == null ? name : $"{parent}/{name}";
+        }
+
+        IStateNode IStateNode.GetChild(string name)
+            => throw new NotImplementedException();
+
+        bool IStateNode.TryGetChild(string name, out IStateNode child)
+        {
+            child = default;
+            return false;
+        }
+
+        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ValueObserver<T>(
                 onNext: x => observer.OnNext(new StateValueOperation<T>() { source = this, value = x }),
-                onDispose: observer.OnDispose,
-                onError: observer.OnError
-            ), immediate, priority);
-
-        public IDisposable Subscribe(IValueObserver observer, bool immediate = false, uint? priority = null)
-            => Subscribe(new ValueObserver<T>(
-                onNext: x => observer.OnNext(x),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);
