@@ -43,12 +43,35 @@ namespace FofX.Stateful
         }
     }
 
+    public interface IDerivedDictionaryAccess<TKey, TValue>
+    {
+        TValue Add(TKey key);
+        bool Remove(TKey key);
+        void Clear();
+    }
+
     public class StateDictionary<TKey, TValue> : StateNode<IDictionaryObserver<TKey, TValue>, StateDictionaryOperation<TKey, TValue>>,
         IStateDictionary,
         IDictionaryObservable<TKey, TValue>,
         IEnumerable<KeyValuePair<TKey, TValue>>
         where TValue : IStateNode, new()
     {
+        private class DerivedDictionaryAccess : IDerivedDictionaryAccess<TKey, TValue>
+        {
+            public Func<TKey, TValue> add;
+            public Func<TKey, bool> remove;
+            public Action clear;
+
+            public TValue Add(TKey key)
+                => add(key);
+
+            public bool Remove(TKey key)
+                => remove(key);
+
+            public void Clear()
+                => clear();
+        }
+
         public int Count => _dictionary.Count;
         public TValue this[TKey key] => _dictionary[key];
         public IEnumerable<TKey> keys => _dictionary.Keys;
@@ -77,13 +100,14 @@ namespace FofX.Stateful
         private Dictionary<TKey, TValue> _dictionary = new Dictionary<TKey, TValue>();
         private Dictionary<TKey, uint> _elementIds = new Dictionary<TKey, uint>();
         private CollectionIdProvider _idProvider;
-        private Func<KeyValuePair<TKey, TValue>[]> _getInitialValue;
+        private Action<StateDictionary<TKey, TValue>> _initializer;
 
         public StateDictionary() : this(default) { }
 
-        public StateDictionary(Func<KeyValuePair<TKey, TValue>[]> getInitialValue) : base()
+        public StateDictionary(Action<StateDictionary<TKey, TValue>> initializer) : base()
         {
-            _getInitialValue = getInitialValue;
+            _initializer = initializer;
+            _idProvider = new CollectionIdProvider(_elementIds.ContainsValue);
         }
 
         protected override IEnumerable<StateDictionaryOperation<TKey, TValue>> GetInitializationOperations()
@@ -119,13 +143,7 @@ namespace FofX.Stateful
 
         protected override void InitializeInternal()
         {
-            _idProvider = new CollectionIdProvider(_elementIds.ContainsValue);
-
-            if (_getInitialValue == null)
-                return;
-
-            foreach (var kvp in _getInitialValue())
-                AddInternal(kvp.Key, kvp.Value);
+            _initializer?.Invoke(this);
         }
 
         protected override IStateNode GetChildInternal(string childName)
@@ -137,23 +155,24 @@ namespace FofX.Stateful
             return child != null;
         }
 
-        private void AddInternal(TKey key, TValue value)
+        private TValue AddInternal(TKey key)
         {
             var elementId = _idProvider.GetUnusedId();
+
+            TValue value = new TValue();
 
             if (value is IKeyedStateNode<TKey> keyedNode)
                 keyedNode.AssignKey(key);
 
-            if (value.parent == null)  // if this is a derived dictionary, this may not be our child
-            {
-                value.Initialize(this, key.ToString());
-                value.PostInitialize();
-            }
+            value.Initialize(this, key.ToString());
+            value.PostInitialize();
 
             _dictionary.Add(key, value);
             _elementIds.Add(key, elementId);
 
             EnqueuePendingStateOperation(new() { source = this, opType = OpType.Add, key = key, value = value, elementId = elementId });
+
+            return value;
         }
 
         private bool RemoveInternal(TKey key)
@@ -166,12 +185,19 @@ namespace FofX.Stateful
             _dictionary.Remove(key);
             _elementIds.Remove(key);
 
+            value.Dispose();
+
             EnqueuePendingStateOperation(new() { source = this, opType = OpType.Remove, key = key, value = value, elementId = elementId });
 
-            if (value.parent == this) // if this is a derived dictionary, this may not be our child
-                value.Dispose();
-
             return true;
+        }
+
+        private void ClearInternal()
+        {
+            foreach (var key in _dictionary.Keys.ToArray())
+                Remove(key);
+
+            _idProvider.Reset();
         }
 
         public TValue Add(TKey key)
@@ -179,9 +205,7 @@ namespace FofX.Stateful
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            TValue value = new TValue();
-            AddInternal(key, value);
-            return value;
+            return AddInternal(key);
         }
 
         public bool Remove(TKey key)
@@ -214,10 +238,7 @@ namespace FofX.Stateful
             if (derived)
                 throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
 
-            foreach (var key in _dictionary.Keys.ToArray())
-                Remove(key);
-
-            _idProvider.Reset();
+            ClearInternal();
         }
 
         public override void Reset()
@@ -229,11 +250,7 @@ namespace FofX.Stateful
 
             Clear();
 
-            if (_getInitialValue == null)
-                return;
-
-            foreach (var kvp in _getInitialValue())
-                AddInternal(kvp.Key, kvp.Value);
+            _initializer?.Invoke(this);
         }
 
         public override void CopyTo(IStateNode copyTo)
@@ -291,13 +308,9 @@ namespace FofX.Stateful
             _deriveStream?.Dispose();
         }
 
-        public void Derive(IDictionaryObservable<TKey, TValue> source)
+        public void Derive(Func<IDerivedDictionaryAccess<TKey, TValue>, IDisposable> derive)
         {
-            _deriveStream = source.Subscribe(
-                onAdd: kvp => AddInternal(kvp.Key, kvp.Value),
-                onRemove: kvp => Remove(kvp.Key),
-                immediate: true
-            );
+            _deriveStream = derive(new DerivedDictionaryAccess() { add = AddInternal, remove = RemoveInternal, clear = ClearInternal });
         }
 
         IStateNode IStateDictionary.Add(object key)

@@ -38,12 +38,55 @@ namespace FofX.Stateful
         }
     }
 
+    public interface IDerivedListAccess<T>
+    {
+        T Add();
+        T Insert(int index);
+        bool Remove(T element);
+        void RemoveAt(int index);
+        void Clear();
+    }
+
     public class StateList<T> : StateNode<IListObserver<T>, StateListOperation<T>>,
         IStateList,
         IListObservable<T>,
         IEnumerable<T>
         where T : IStateNode, new()
     {
+        private class DerivedListAccess : IDerivedListAccess<T>
+        {
+            public Func<T> add;
+            public Action clear;
+            public Func<int, T> insert;
+            public Func<T, bool> remove;
+            public Action<int> removeAt;
+
+            public T Add()
+            {
+                return add();
+            }
+
+            public void Clear()
+            {
+                clear();
+            }
+
+            public T Insert(int index)
+            {
+                return insert(index);
+            }
+
+            public bool Remove(T element)
+            {
+                return remove(element);
+            }
+
+            public void RemoveAt(int index)
+            {
+                removeAt(index);
+            }
+        }
+
         public int Count => _list.Count;
         public T this[int index] => _list[index];
         public override int childCount => _list.Count;
