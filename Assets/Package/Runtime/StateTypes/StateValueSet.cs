@@ -11,22 +11,6 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public struct StateSetOperation<T> : IStateOperation
-    {
-        public IStateNode source { get; set; }
-        public OpType opType { get; set; }
-        public T element { get; set; }
-        public uint elementId { get; set; }
-
-        object IStateOperation.param => element;
-        public IStateNode child => null;
-
-        public override string ToString()
-        {
-            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={element}";
-        }
-    }
-
     public interface IStateValueSet : IEnumerable, IStateNode, ICollectionObservable
     {
         Type elementType { get; }
@@ -117,6 +101,12 @@ namespace FofX.Stateful
         }
 
         void IStateNode.PostInitialize() { }
+
+        protected override void SendOperation(ISetObserver<T> observer, SetOp<T> operation)
+        {
+            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.element, operation.elementId)}");
+            base.SendOperation(observer, operation);
+        }
 
         public void CopyTo(IStateNode copyTo)
         {
@@ -236,10 +226,10 @@ namespace FofX.Stateful
             return false;
         }
 
-        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new SetObserver<T>(
-                onAdd: (id, element) => observer.OnNext(new StateSetOperation<T>() { source = this, elementId = id, element = element, opType = OpType.Add }),
-                onRemove: (id, element) => observer.OnNext(new StateSetOperation<T>() { source = this, elementId = id, element = element, opType = OpType.Remove }),
+                onAdd: (id, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = element, elementId = id }),
+                onRemove: (id, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = element, elementId = id }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);

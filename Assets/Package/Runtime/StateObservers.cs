@@ -22,13 +22,13 @@ namespace FofX.Stateful
         public static ISetObservable<IStateNode> ObservableChildren(this IStateNode source)
             => new SetOperator<IStateNode>(source.context, receiver => new ChildrenObservable(source, receiver));
 
-        public static ObserveThing.IObservable<IStateOperation> ObservableCombineRecursive(params IStateNode[] source)
+        public static ObserveThing.IObservable<StateOperation> ObservableCombineRecursive(params IStateNode[] source)
             => new ObservableSet<IStateNode>(source[0].context, source).ObservableCombineRecursive();
 
-        public static ObserveThing.IObservable<IStateOperation> ObservableCombineRecursive(this ISetObservable<IStateNode> source)
+        public static ObserveThing.IObservable<StateOperation> ObservableCombineRecursive(this ISetObservable<IStateNode> source)
             => source.ObservableChildrenRecursive().ObservableCombine();
 
-        public static ObserveThing.IObservable<IStateOperation> ObservableCombineRecursive(this IStateNode source)
+        public static ObserveThing.IObservable<StateOperation> ObservableCombineRecursive(this IStateNode source)
             => new ObservableSet<IStateNode>(source.context, source).ObservableCombineRecursive();
     }
 }

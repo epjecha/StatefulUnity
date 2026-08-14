@@ -76,5 +76,8 @@ namespace FofX.Stateful
             foreach (var toRemove in removed)
                 dict.Remove(toRemove);
         }
+
+        public static string FormatOperationLog(OpType opType, IStateNode source, object param = default, uint elementId = default, IStateNode child = default)
+            => $"[{opType}] source={source.nodePath} param={param?.ToString() ?? "NULL"} elementId={elementId} child={child?.nodeName ?? "NULL"}";
     }
 }

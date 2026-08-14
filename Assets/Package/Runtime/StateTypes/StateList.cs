@@ -21,23 +21,6 @@ namespace FofX.Stateful
         void Clear();
     }
 
-    public struct StateListOperation<T> : IStateOperation where T : IStateNode
-    {
-        public IStateNode source { get; set; }
-        public OpType opType { get; set; }
-        public T element { get; set; }
-        public uint elementId { get; set; }
-        public int index { get; set; }
-
-        object IStateOperation.param => index;
-        public IStateNode child => element;
-
-        public override string ToString()
-        {
-            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={index}";
-        }
-    }
-
     public class StateList<T> : ObservableListBase<T>,
         IStateList,
         IEnumerable<T>
@@ -110,6 +93,12 @@ namespace FofX.Stateful
         {
             foreach (var child in this)
                 child.PostInitialize();
+        }
+
+        protected override void SendOperation(IListObserver<T> observer, ListOp<T> operation)
+        {
+            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.index, operation.elementId, operation.element)}");
+            base.SendOperation(observer, operation);
         }
 
         private T Insert_NoCheck(int index)
@@ -300,10 +289,10 @@ namespace FofX.Stateful
         int IStateList.IndexOf(IStateNode node)
             => IndexOf((T)node);
 
-        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ListObserver<T>(
-                onAdd: (id, index, element) => observer.OnNext(new StateListOperation<T>() { source = this, elementId = id, index = index, element = element, opType = OpType.Add }),
-                onRemove: (id, index, element) => observer.OnNext(new StateListOperation<T>() { source = this, elementId = id, index = index, element = element, opType = OpType.Remove }),
+                onAdd: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = index, child = element, elementId = id }),
+                onRemove: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = index, child = element, elementId = id }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);

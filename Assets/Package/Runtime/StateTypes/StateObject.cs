@@ -7,22 +7,7 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public struct StateObjectOperation : IStateOperation
-    {
-        public IStateNode source { get; set; }
-        public OpType opType => OpType.None;
-        public object param { get; }
-
-        uint IStateOperation.elementId { get; }
-        IStateNode IStateOperation.child { get; }
-
-        public override string ToString()
-        {
-            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={param}";
-        }
-    }
-
-    public class StateObject : ObservableBase<IObserverBase, StateObjectOperation>, IStateNode
+    public class StateObject : ObservableBase<IObserverBase, StateOperation>, IStateNode
     {
         public string nodeName { get; private set; }
         public string nodePath { get; private set; }
@@ -97,12 +82,12 @@ namespace FofX.Stateful
             }
         }
 
-        protected override IEnumerable<StateObjectOperation> GetInitializationOperations()
+        protected override IEnumerable<StateOperation> GetInitializationOperations()
         {
             yield break;
         }
 
-        protected override void SendOperation(IObserverBase observer, StateObjectOperation operation)
+        protected override void SendOperation(IObserverBase observer, StateOperation operation)
         {
             throw new NotImplementedException();
         }
@@ -192,7 +177,7 @@ namespace FofX.Stateful
         public bool TryGetChild(string childName, out IStateNode child)
             => _children.TryGetValue(childName, out child);
 
-        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
-            => Subscribe((IObserverBase)new Observer<IStateOperation>());
+        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
+            => Subscribe((IObserverBase)new Observer<StateOperation>());
     }
 }

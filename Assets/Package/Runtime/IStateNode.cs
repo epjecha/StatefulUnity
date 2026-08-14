@@ -13,18 +13,21 @@ namespace FofX.Stateful
         Remove
     }
 
-    public interface IStateOperation : IOperation
+    public struct StateOperation : IOperation
     {
-        new IStateNode source { get; }
-        OpType opType { get; }
-        object param { get; }
-        public uint elementId { get; }
-        IStateNode child { get; }
+        public IStateNode source;
+        public OpType opType;
+        public object param;
+        public uint elementId;
+        public IStateNode child;
 
-        ObserveThing.IObservable<IOperation> IOperation.source => source;
+        ObserveThing.IObservable<IOperation> IOperation.source => (ObserveThing.IObservable<IOperation>)source;
+
+        public override string ToString()
+            => $"[{opType}] source={source.nodePath} param={param?.ToString() ?? "NULL"} elementId={elementId} child={child?.nodeName ?? "NULL"}";
     }
 
-    public interface IStateNode : ObserveThing.IObservable<IStateOperation>, IDisposable
+    public interface IStateNode : ObserveThing.IObservable<StateOperation>, IDisposable
     {
         string nodeName { get; }
         string nodePath { get; }

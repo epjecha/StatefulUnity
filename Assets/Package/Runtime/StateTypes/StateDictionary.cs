@@ -26,23 +26,6 @@ namespace FofX.Stateful
         void Clear();
     }
 
-    public struct StateDictionaryOperation<TKey, TValue> : IStateOperation where TValue : IStateNode
-    {
-        public IStateNode source { get; set; }
-        public OpType opType { get; set; }
-        public TKey key { get; set; }
-        public TValue value { get; set; }
-        public uint elementId { get; set; }
-
-        object IStateOperation.param => key;
-        public IStateNode child => value;
-
-        public override string ToString()
-        {
-            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={key}";
-        }
-    }
-
     public class StateDictionary<TKey, TValue> : ObservableDictionaryBase<TKey, TValue>,
         IStateDictionary,
         IEnumerable<KeyValuePair<TKey, TValue>>
@@ -123,6 +106,12 @@ namespace FofX.Stateful
         {
             foreach (var child in GetValuesInternal())
                 child.PostInitialize();
+        }
+
+        protected override void SendOperation(IDictionaryObserver<TKey, TValue> observer, DictionaryOp<TKey, TValue> operation)
+        {
+            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.key, operation.elementId, operation.value)}");
+            base.SendOperation(observer, operation);
         }
 
         private TValue Add_NoCheck(TKey key)
@@ -303,10 +292,10 @@ namespace FofX.Stateful
         IStateNode IStateDictionary.GetOrAdd(object key)
             => GetOrAdd((TKey)key);
 
-        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new DictionaryObserver<TKey, TValue>(
-                onAdd: (id, kvp) => observer.OnNext(new StateDictionaryOperation<TKey, TValue>() { source = this, opType = OpType.Add, key = kvp.Key, value = kvp.Value, elementId = id }),
-                onRemove: (id, kvp) => observer.OnNext(new StateDictionaryOperation<TKey, TValue>() { source = this, opType = OpType.Remove, key = kvp.Key, value = kvp.Value, elementId = id }),
+                onAdd: (id, kvp) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = kvp.Key, child = kvp.Value, elementId = id }),
+                onRemove: (id, kvp) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = kvp.Key, child = kvp.Value, elementId = id }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);

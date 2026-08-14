@@ -8,22 +8,6 @@ using FofX.Serialization;
 
 namespace FofX.Stateful
 {
-    public struct StateValueOperation<T> : IStateOperation
-    {
-        public IStateNode source { get; set; }
-        public OpType opType => OpType.Set;
-        public T value { get; set; }
-
-        uint IStateOperation.elementId => 0;
-        object IStateOperation.param => value;
-        public IStateNode child => null;
-
-        public override string ToString()
-        {
-            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={value}";
-        }
-    }
-
     public interface IStateValue : IStateNode, IValueObservable
     {
         object value { get; set; }
@@ -110,6 +94,12 @@ namespace FofX.Stateful
 
         void IStateNode.PostInitialize() { }
 
+        protected override void SendOperation(IValueObserver<T> observer, ValueOp<T> operation)
+        {
+            logger.Trace($"Notifying {Utility.FormatOperationLog(OpType.Set, this, operation.value)}");
+            base.SendOperation(observer, operation);
+        }
+
         public void CopyTo(IStateNode copyTo)
         {
             ((StateValue<T>)copyTo).value = value;
@@ -171,9 +161,9 @@ namespace FofX.Stateful
             return false;
         }
 
-        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ValueObserver<T>(
-                onNext: x => observer.OnNext(new StateValueOperation<T>() { source = this, value = x }),
+                onNext: x => observer.OnNext(new StateOperation() { source = this, opType = OpType.Set, param = x }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);

@@ -272,7 +272,7 @@ namespace FofX.Stateful.Tests
                 yield return nestedChild;
         }
 
-        private void AssertStateOpArgsEquals(IStateOperation args, IStateNode source, OpType opType, object param, IStateNode child)
+        private void AssertStateOpArgsEquals(StateOperation args, IStateNode source, OpType opType, object param, IStateNode child)
         {
             Assert.AreEqual(source, args.source);
             Assert.AreEqual(opType, args.opType);

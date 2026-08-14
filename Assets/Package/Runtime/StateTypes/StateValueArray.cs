@@ -94,6 +94,12 @@ namespace FofX.Stateful
 
         void IStateNode.PostInitialize() { }
 
+        protected override void SendOperation(IValueObserver<IReadOnlyList<T>> observer, ValueOp<IReadOnlyList<T>> operation)
+        {
+            logger.Trace($"Notifying {Utility.FormatOperationLog(OpType.Set, this, $"[{string.Join(", ", operation.value)}]")}");
+            base.SendOperation(observer, operation);
+        }
+
         public void SetValue(T[] value)
         {
             if (derived)
@@ -178,9 +184,9 @@ namespace FofX.Stateful
         void IStateValueArray.SetValue(IEnumerable values)
             => SetValue(values.Cast<T>().ToArray());
 
-        public IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
+        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ValueObserver<IReadOnlyList<T>>(
-                onNext: x => observer.OnNext(new StateValueOperation<IReadOnlyList<T>>() { source = this, value = x }),
+                onNext: x => observer.OnNext(new StateOperation() { source = this, opType = OpType.Set, param = x }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);
