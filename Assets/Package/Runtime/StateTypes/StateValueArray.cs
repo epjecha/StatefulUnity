@@ -28,7 +28,7 @@ namespace FofX.Stateful
         public IStateNode root { get; private set; }
         public IStateNode parent { get; private set; }
         public bool initialized { get; private set; }
-        public bool derived => _deriveStream != null;
+        public bool derived => _deriveSubscription != null;
 
         public int count => _value.Count;
         public T this[int index] => _value[index];
@@ -38,7 +38,7 @@ namespace FofX.Stateful
 
         Type IStateValueArray.elementType => typeof(T);
 
-        private IDisposable _deriveStream;
+        private IDisposable _deriveSubscription;
 
         IEnumerator<T> IEnumerable<T>.GetEnumerator()
             => _value.GetEnumerator();
@@ -129,7 +129,7 @@ namespace FofX.Stateful
 
         protected override void DisposeInternal()
         {
-            _deriveStream?.Dispose();
+            _deriveSubscription?.Dispose();
         }
 
         public JSONNode ToJSON(Func<IStateNode, bool> filter)
@@ -155,12 +155,9 @@ namespace FofX.Stateful
             SetValueInternal(((JSONArray)json).Linq.Select(x => serializer.fromJSON(x)).ToArray());
         }
 
-        public void Derive(IValueObservable<IReadOnlyList<T>> source)
+        public void Derive(IDisposable subscription)
         {
-            _deriveStream = source.Subscribe(
-                SetValueInternal,
-                immediate: true
-            );
+            _deriveSubscription = subscription;
         }
 
         public void Rename(string name)

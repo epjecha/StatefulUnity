@@ -38,15 +38,6 @@ namespace FofX.Stateful
         }
     }
 
-    public interface IDerivedListAccess<T>
-    {
-        T Add();
-        T Insert(int index);
-        bool Remove(T element);
-        void RemoveAt(int index);
-        void Clear();
-    }
-
     public class StateList<T> : ObservableListBase<T>,
         IStateList,
         IEnumerable<T>
@@ -59,7 +50,7 @@ namespace FofX.Stateful
         public IStateNode root { get; private set; }
         public IStateNode parent { get; private set; }
         public bool initialized { get; private set; }
-        public bool derived => _deriveStream != null;
+        public bool derived => _deriveSubscription != null;
 
         public int Count => GetCountInternal();
         public T this[int index] => ElementAtInternal(index);
@@ -68,7 +59,7 @@ namespace FofX.Stateful
         int IStateNode.childCount => GetCountInternal();
         IEnumerable<IStateNode> IStateNode.children => ElementsInternal().Select(x => (IStateNode)x.value);
 
-        private IDisposable _deriveStream;
+        private IDisposable _deriveSubscription;
 
         IEnumerator<T> IEnumerable<T>.GetEnumerator()
             => ElementsInternal().Select(x => x.value).GetEnumerator();
@@ -263,16 +254,12 @@ namespace FofX.Stateful
             foreach (var child in ElementsInternal())
                 child.value.Dispose();
 
-            _deriveStream?.Dispose();
+            _deriveSubscription?.Dispose();
         }
 
-        public void Derive(IListObservable<T> source)
+        public void Derive(IDisposable subscription)
         {
-            _deriveStream = source.Subscribe(
-                onAdd: InsertInternal,
-                onRemove: (index, _) => RemoveAtInternal(index),
-                immediate: true
-            );
+            _deriveSubscription = subscription;
         }
 
         public void Rename(string name)

@@ -43,41 +43,18 @@ namespace FofX.Stateful
         }
     }
 
-    public interface IDerivedDictionaryAccess<TKey, TValue>
-    {
-        TValue Add(TKey key);
-        bool Remove(TKey key);
-        void Clear();
-    }
-
     public class StateDictionary<TKey, TValue> : ObservableDictionaryBase<TKey, TValue>,
         IStateDictionary,
         IEnumerable<KeyValuePair<TKey, TValue>>
         where TValue : IStateNode, new()
     {
-        private class DerivedDictionaryAccess : IDerivedDictionaryAccess<TKey, TValue>
-        {
-            public Func<TKey, TValue> add;
-            public Func<TKey, bool> remove;
-            public Action clear;
-
-            public TValue Add(TKey key)
-                => add(key);
-
-            public bool Remove(TKey key)
-                => remove(key);
-
-            public void Clear()
-                => clear();
-        }
-
         public string nodeName { get; private set; }
         public string nodePath { get; private set; }
         public ILogger logger { get; private set; }
         public IStateNode root { get; private set; }
         public IStateNode parent { get; private set; }
         public bool initialized { get; private set; }
-        public bool derived => _deriveStream != null;
+        public bool derived => _deriveSubscription != null;
 
         public int Count => GetCountInternal();
         public TValue this[TKey key] => GetValue(key);
@@ -95,7 +72,7 @@ namespace FofX.Stateful
         int IStateNode.childCount => Count;
         IEnumerable<IStateNode> IStateNode.children => GetValuesInternal().Select(x => (IStateNode)x);
 
-        private IDisposable _deriveStream;
+        private IDisposable _deriveSubscription;
 
         IEnumerator<KeyValuePair<TKey, TValue>> IEnumerable<KeyValuePair<TKey, TValue>>.GetEnumerator()
             => ElementsInternal().Select(x => new KeyValuePair<TKey, TValue>(x.Key, x.Value.value)).GetEnumerator();
@@ -280,12 +257,12 @@ namespace FofX.Stateful
             foreach (var child in GetValuesInternal())
                 child.Dispose();
 
-            _deriveStream?.Dispose();
+            _deriveSubscription?.Dispose();
         }
 
-        public void Derive(Func<IDerivedDictionaryAccess<TKey, TValue>, IDisposable> derive)
+        public void Derive(IDisposable subscription)
         {
-            _deriveStream = derive(new DerivedDictionaryAccess() { add = Add_NoCheck, remove = Remove_NoCheck, clear = ClearInternal });
+            _deriveSubscription = subscription;
         }
 
         public void Rename(string name)

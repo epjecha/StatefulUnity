@@ -50,14 +50,14 @@ namespace FofX.Stateful
         public bool initialized { get; private set; }
 
         public int Count => GetCountInternal();
-        public bool derived => _deriveStream != null;
+        public bool derived => _deriveSubscription != null;
 
         int IStateNode.childCount => 0;
         IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
 
         Type IStateValueSet.elementType => typeof(T);
 
-        private IDisposable _deriveStream;
+        private IDisposable _deriveSubscription;
 
         private IEnumerable<IStateNode> EmptyChildren()
         {
@@ -204,16 +204,12 @@ namespace FofX.Stateful
 
         protected override void DisposeInternal()
         {
-            _deriveStream?.Dispose();
+            _deriveSubscription?.Dispose();
         }
 
-        public void Derive(IListObservable<T> source)
+        public void Derive(IDisposable subscription)
         {
-            _deriveStream = source.Subscribe(
-                onAdd: item => AddInternal(item),
-                onRemove: item => RemoveInternal(item),
-                immediate: true
-            );
+            _deriveSubscription = subscription;
         }
 
         bool IStateValueSet.Add(object element)

@@ -40,7 +40,7 @@ namespace FofX.Stateful
         public ILogger logger { get; private set; }
         public IStateNode parent { get; private set; }
         public bool initialized { get; private set; }
-        public bool derived => _deriveStream != null;
+        public bool derived => _deriveSubscription != null;
 
         public T value
         {
@@ -61,7 +61,7 @@ namespace FofX.Stateful
         int IStateNode.childCount => 0;
         IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
 
-        private IDisposable _deriveStream;
+        private IDisposable _deriveSubscription;
 
         private Action<StateValue<T>> _initializer;
 
@@ -148,15 +148,12 @@ namespace FofX.Stateful
 
         protected override void DisposeInternal()
         {
-            _deriveStream?.Dispose();
+            _deriveSubscription?.Dispose();
         }
 
-        public void Derive(IValueObservable<T> source)
+        public void Derive(IDisposable subscription)
         {
-            _deriveStream = source.Subscribe(
-                x => value = x,
-                immediate: true
-            );
+            _deriveSubscription = subscription;
         }
 
         void IStateNode.Rename(string name)
