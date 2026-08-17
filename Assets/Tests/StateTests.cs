@@ -46,7 +46,7 @@ namespace FofX.Stateful.Tests
 
             var added = state.dict[1];
 
-            Assert.AreEqual(1, state.dict.Count);
+            Assert.AreEqual(1, state.dict.count);
             Assert.AreEqual("1", added.nodeName);
             Assert.AreEqual("root/dict/1", added.nodePath);
             Assert.AreEqual(state.dict, added.parent);
@@ -56,7 +56,7 @@ namespace FofX.Stateful.Tests
             state.dict.Remove(1);
 
             Assert.AreEqual(true, added.disposed);
-            Assert.AreEqual(0, state.dict.Count);
+            Assert.AreEqual(0, state.dict.count);
 
             int addCount = 0;
             int removeCount = 0;
@@ -173,7 +173,7 @@ namespace FofX.Stateful.Tests
 
             state.dict.Clear();
 
-            Assert.AreEqual(0, state.dict.Count);
+            Assert.AreEqual(0, state.dict.count);
 
             disposed = false;
 
@@ -283,7 +283,7 @@ namespace FofX.Stateful.Tests
         [Test]
         public void TestStateValueArray()
         {
-            var array = new StateValueArray<int>();
+            var array = new ReadOnlyStateValueArray<int>();
             array.Initialize(Settings.DefaultObservationContext, new DefaultLogger() { logLevel = LogLevel.Debug }, "root");
 
             int callCount = 0;

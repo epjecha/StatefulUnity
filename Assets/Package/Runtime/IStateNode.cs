@@ -38,7 +38,7 @@ namespace FofX.Stateful
         int childCount { get; }
         bool initialized { get; }
         bool disposed { get; }
-        bool derived { get; }
+        bool isView { get; }
         void Initialize(ObservationContext context, ILogger logger, string name = "root");
         void Initialize(IStateNode parent, string name);
         void PostInitialize();

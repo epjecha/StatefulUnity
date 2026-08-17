@@ -8,14 +8,96 @@ using FofX.Serialization;
 
 namespace FofX.Stateful
 {
-    public interface IStateValue : IStateNode, IValueObservable
+    public interface IReadOnlyStateValue : IStateNode, IValueObservable
     {
-        object value { get; set; }
+        object value { get; }
         Type valueType { get; }
     }
 
-    public class StateValue<T> : ObservableValueBase<T>,
-        IStateValue,
+    public interface IStateValue : IReadOnlyStateValue
+    {
+        new object value { get; set; }
+
+        object IReadOnlyStateValue.value => value;
+    }
+
+    public interface IStateValueViewMutator<T>
+    {
+        T value { get; set; }
+    }
+
+    public class StateValueView<T> : ReadOnlyStateValue<T>
+    {
+        public override bool isView => true;
+        private Mutator _mutator;
+        private IDisposable _subscription;
+
+        private class Mutator : IStateValueViewMutator<T>
+        {
+            public Func<T> get;
+            public Action<T> set;
+
+            public T value
+            {
+                get => get();
+                set => set(value);
+            }
+        }
+
+        public StateValueView()
+        {
+            _mutator = new Mutator() { get = () => _value, set = SetValueInternal };
+        }
+
+        protected override void ResetInternal() { }
+
+        public void InitializeView(Func<IStateValueViewMutator<T>, IDisposable> initialize)
+        {
+            _subscription = initialize(_mutator);
+        }
+
+        protected override void DisposeInternal()
+        {
+            _subscription?.Dispose();
+            base.DisposeInternal();
+        }
+    }
+
+    public class StateValue<T> : ReadOnlyStateValue<T>
+    {
+        new public T value
+        {
+            get => _value;
+            set => SetValueInternal(value);
+        }
+
+        public override bool isView => false;
+
+        private Action<StateValue<T>> _initializer;
+
+        public StateValue() : base() { }
+
+        public StateValue(Action<StateValue<T>> initializer) : base()
+        {
+            _initializer = initializer;
+        }
+
+        protected override void InitializeInternal()
+        {
+            _initializer?.Invoke(this);
+        }
+
+        protected override void ResetInternal()
+        {
+            logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
+
+            value = default;
+            _initializer?.Invoke(this);
+        }
+    }
+
+    public abstract class ReadOnlyStateValue<T> : ObservableValueBase<T>,
+        IReadOnlyStateValue,
         IValueObservable<T>
     {
         public string nodeName { get; private set; }
@@ -24,44 +106,34 @@ namespace FofX.Stateful
         public ILogger logger { get; private set; }
         public IStateNode parent { get; private set; }
         public bool initialized { get; private set; }
-        public bool derived => _deriveSubscription != null;
+        public abstract bool isView { get; }
 
-        public T value
-        {
-            get => _value;
-            set
-            {
-                if (derived)
-                    throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-                SetValueInternal(value);
-            }
-        }
-
+        public T value => _value;
         public Type valueType => typeof(T);
 
-        object IStateValue.value { get => value; set => this.value = (T)value; }
+        object IReadOnlyStateValue.value => value;
 
         int IStateNode.childCount => 0;
         IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
-
-        private IDisposable _deriveSubscription;
-
-        private Action<StateValue<T>> _initializer;
 
         private IEnumerable<IStateNode> EmptyChildren()
         {
             yield break;
         }
 
-        public StateValue() : this(default(Action<StateValue<T>>)) { }
+        public ReadOnlyStateValue() : base(default) { }
 
-        public StateValue(T value) : this(x => x.value = value) { }
-        public StateValue(Action<StateValue<T>> initializer) : base(null)
+        protected virtual void InitializeInternal() { }
+
+        protected override void SendOperation(IValueObserver<T> observer, ValueOp<T> operation)
         {
-            _initializer = initializer;
+            logger.Trace($"Notifying {Utility.FormatOperationLog(OpType.Set, this, operation.value)}");
+            base.SendOperation(observer, operation);
         }
 
+        protected abstract void ResetInternal();
+
+        // IStateNode
         public void Initialize(ObservationContext context, ILogger logger, string name = "root")
         {
             this.context = context;
@@ -69,7 +141,7 @@ namespace FofX.Stateful
             this.logger = logger;
             nodeName = name;
             nodePath = name;
-            _initializer?.Invoke(this);
+            InitializeInternal();
             initialized = true;
             ((IStateNode)this).PostInitialize();
         }
@@ -88,63 +160,11 @@ namespace FofX.Stateful
             logger = parent.logger;
             nodeName = name;
             nodePath = $"{parent.nodePath}/{nodeName}";
-            _initializer?.Invoke(this);
+            InitializeInternal();
             initialized = true;
         }
 
         void IStateNode.PostInitialize() { }
-
-        protected override void SendOperation(IValueObserver<T> observer, ValueOp<T> operation)
-        {
-            logger.Trace($"Notifying {Utility.FormatOperationLog(OpType.Set, this, operation.value)}");
-            base.SendOperation(observer, operation);
-        }
-
-        public void CopyTo(IStateNode copyTo)
-        {
-            ((StateValue<T>)copyTo).value = value;
-        }
-
-        public void Reset()
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-            value = default;
-            _initializer?.Invoke(this);
-
-            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
-        }
-
-        public JSONNode ToJSON(Func<IStateNode, bool> filter)
-            => JSONSerialization.ToJSON(value);
-
-        public void FromJSON(JSONNode json)
-        {
-            if (derived)
-            {
-                logger.Warning($"Attempted to write to derived state from JSON. This will be ignored. Path: {nodePath}");
-                return;
-            }
-
-            if (json == null)
-            {
-                Reset();
-                return;
-            }
-
-            value = JSONSerialization.FromJSON<T>(json);
-        }
-
-        protected override void DisposeInternal()
-        {
-            _deriveSubscription?.Dispose();
-        }
-
-        public void Derive(IDisposable subscription)
-        {
-            _deriveSubscription = subscription;
-        }
 
         void IStateNode.Rename(string name)
         {
@@ -161,6 +181,33 @@ namespace FofX.Stateful
             return false;
         }
 
+        public void CopyTo(IStateNode copyTo)
+            => ((ReadOnlyStateValue<T>)copyTo).SetValueInternal(value);
+
+        public void FromJSON(JSONNode json)
+        {
+            if (isView)
+            {
+                logger.Warning($"Attempted to write to derived state from JSON. This will be ignored. Path: {nodePath}");
+                return;
+            }
+
+            if (json == null)
+            {
+                ResetInternal();
+                return;
+            }
+
+            SetValueInternal(JSONSerialization.FromJSON<T>(json));
+        }
+
+        public JSONNode ToJSON(Func<IStateNode, bool> filter)
+            => JSONSerialization.ToJSON(value);
+
+        void IStateNode.Reset()
+            => ResetInternal();
+
+        // IObserver<StateOperation>
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ValueObserver<T>(
                 onNext: x => observer.OnNext(new StateOperation() { source = this, opType = OpType.Set, param = x }),

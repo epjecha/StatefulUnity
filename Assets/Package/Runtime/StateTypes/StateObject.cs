@@ -18,7 +18,7 @@ namespace FofX.Stateful
 
         public int childCount => _children.Count;
         public IEnumerable<IStateNode> children => _children.Values;
-        public bool derived => false;
+        public bool isView => false;
 
 
         private Dictionary<string, IStateNode> _children = new Dictionary<string, IStateNode>();
@@ -106,7 +106,7 @@ namespace FofX.Stateful
         {
             logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
 
-            foreach (var child in children.Where(x => !x.derived))
+            foreach (var child in children.Where(x => !x.isView))
                 child.Reset();
         }
 
@@ -116,7 +116,7 @@ namespace FofX.Stateful
             {
                 var destChild = copyTo.GetChild(child.nodeName);
 
-                if (destChild.derived)
+                if (destChild.isView)
                     continue;
 
                 child.CopyTo(destChild);
@@ -125,7 +125,7 @@ namespace FofX.Stateful
 
         public void FromJSON(JSONNode json)
         {
-            if (derived)
+            if (isView)
             {
                 logger.Warning($"Attempted to write to derived state from JSON. This will be ignored. Path: {nodePath}");
                 return;

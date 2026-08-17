@@ -8,17 +8,83 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public interface IStateValueArray : IStateNode, IEnumerable, IValueObservable
+    public interface IStateValueArray : IReadOnlyStateValueArray
     {
-        int count { get; }
-        Type elementType { get; }
-
         void SetValue(IEnumerable values);
         void Clear();
     }
 
-    public class StateValueArray<T> : ObservableValueBase<IReadOnlyList<T>>,
-        IStateValueArray,
+    public interface IReadOnlyStateValueArray : IStateNode, IEnumerable, IValueObservable
+    {
+        int count { get; }
+        Type elementType { get; }
+        object this[int index] { get; }
+    }
+
+    public class StateValueArrayView<T> : ReadOnlyStateValueArray<T>
+    {
+        public override bool isView => true;
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            logger.Warning($"{nodePath} is a view. \'CopyTo\' will be ignored.");
+        }
+
+        public override void FromJSON(JSONNode json)
+        {
+            logger.Warning($"{nodePath} is a view. \'FromJSON\' will be ignored.");
+        }
+
+        protected override void Reset()
+        {
+            logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
+        }
+    }
+
+    public class StateValueArray<T> : ReadOnlyStateValueArray<T>, IStateValueArray
+    {
+        public override bool isView => false;
+        private Action<StateValueArray<T>> _initializer;
+
+        public StateValueArray() : this(default(Action<StateValueArray<T>>)) { }
+        public StateValueArray(T[] value) : this(x => x.SetValue(value)) { }
+        public StateValueArray(Action<StateValueArray<T>> initializer) : base()
+        {
+            SetValueInternal(new T[0]);
+            _initializer = initializer;
+        }
+
+        public void SetValue(T[] value)
+            => SetValueInternal(value);
+
+        public void Clear()
+            => SetValueInternal(new T[0]);
+
+        void IStateValueArray.SetValue(IEnumerable values)
+            => SetValue(values.Cast<T>().ToArray());
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            var target = (StateValueArray<T>)copyTo;
+            target.SetValue(_value.ToArray());
+        }
+
+        protected override void Reset()
+        {
+            SetValueInternal(new T[0]);
+            _initializer?.Invoke(this);
+            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
+        }
+
+        public override void FromJSON(JSONNode json)
+        {
+            var serializer = JSONSerialization.GetSerializer<T>();
+            SetValueInternal(((JSONArray)json).Linq.Select(x => serializer.fromJSON(x)).ToArray());
+        }
+    }
+
+    public abstract class ReadOnlyStateValueArray<T> : ObservableValueBase<IReadOnlyList<T>>,
+        IReadOnlyStateValueArray,
         IValueObservable<IReadOnlyList<T>>,
         IEnumerable<T>
     {
@@ -28,7 +94,7 @@ namespace FofX.Stateful
         public IStateNode root { get; private set; }
         public IStateNode parent { get; private set; }
         public bool initialized { get; private set; }
-        public bool derived => _deriveSubscription != null;
+        public abstract bool isView { get; }
 
         public int count => _value.Count;
         public T this[int index] => _value[index];
@@ -36,9 +102,8 @@ namespace FofX.Stateful
         int IStateNode.childCount => 0;
         IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
 
-        Type IStateValueArray.elementType => typeof(T);
-
-        private IDisposable _deriveSubscription;
+        object IReadOnlyStateValueArray.this[int index] => this[index];
+        Type IReadOnlyStateValueArray.elementType => typeof(T);
 
         IEnumerator<T> IEnumerable<T>.GetEnumerator()
             => _value.GetEnumerator();
@@ -46,21 +111,12 @@ namespace FofX.Stateful
         IEnumerator IEnumerable.GetEnumerator()
             => _value.GetEnumerator();
 
-        private Action<StateValueArray<T>> _initializer;
-
-        public StateValueArray() : this(default(Action<StateValueArray<T>>)) { }
-
-        public StateValueArray(T[] value) : this(x => x.SetValue(value)) { }
-        public StateValueArray(Action<StateValueArray<T>> initializer) : base(null)
-        {
-            SetValueInternal(new T[0]);
-            _initializer = initializer;
-        }
-
         private IEnumerable<IStateNode> EmptyChildren()
         {
             yield break;
         }
+
+        public ReadOnlyStateValueArray() : base(default) { }
 
         public void Initialize(ObservationContext context, ILogger logger, string name = "root")
         {
@@ -69,7 +125,7 @@ namespace FofX.Stateful
             this.logger = logger;
             nodeName = name;
             nodePath = name;
-            _initializer?.Invoke(this);
+            InitializeInternal();
             initialized = true;
             ((IStateNode)this).PostInitialize();
         }
@@ -88,9 +144,11 @@ namespace FofX.Stateful
             logger = parent.logger;
             nodeName = name;
             nodePath = $"{parent.nodePath}/{nodeName}";
-            _initializer?.Invoke(this);
+            InitializeInternal();
             initialized = true;
         }
+
+        protected virtual void InitializeInternal() { }
 
         void IStateNode.PostInitialize() { }
 
@@ -100,43 +158,12 @@ namespace FofX.Stateful
             base.SendOperation(observer, operation);
         }
 
-        public void SetValue(T[] value)
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
+        public abstract void CopyTo(IStateNode copyTo);
 
-            SetValueInternal(value);
-        }
+        protected abstract void Reset();
 
-        public void Clear()
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-            SetValueInternal(new T[0]);
-        }
-
-        public void CopyTo(IStateNode copyTo)
-        {
-            var target = (StateValueArray<T>)copyTo;
-            target.SetValue(_value.ToArray());
-        }
-
-        public void Reset()
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-            SetValueInternal(new T[0]);
-            _initializer?.Invoke(this);
-
-            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
-        }
-
-        protected override void DisposeInternal()
-        {
-            _deriveSubscription?.Dispose();
-        }
+        void IStateNode.Reset()
+            => Reset();
 
         public JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
@@ -149,22 +176,7 @@ namespace FofX.Stateful
             return json;
         }
 
-        public void FromJSON(JSONNode json)
-        {
-            if (derived)
-            {
-                logger.Warning($"Attempted to write to derived state from JSON. This will be ignored. Path: {nodePath}");
-                return;
-            }
-
-            var serializer = JSONSerialization.GetSerializer<T>();
-            SetValueInternal(((JSONArray)json).Linq.Select(x => serializer.fromJSON(x)).ToArray());
-        }
-
-        public void Derive(IDisposable subscription)
-        {
-            _deriveSubscription = subscription;
-        }
+        public abstract void FromJSON(JSONNode json);
 
         public void Rename(string name)
         {
@@ -180,9 +192,6 @@ namespace FofX.Stateful
             child = default;
             return false;
         }
-
-        void IStateValueArray.SetValue(IEnumerable values)
-            => SetValue(values.Cast<T>().ToArray());
 
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ValueObserver<IReadOnlyList<T>>(
