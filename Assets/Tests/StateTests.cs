@@ -5,7 +5,6 @@ using System.Linq;
 using NUnit.Framework;
 
 using ObserveThing;
-using UnityEngine;
 
 namespace FofX.Stateful.Tests
 {
@@ -46,7 +45,7 @@ namespace FofX.Stateful.Tests
 
             var added = state.dict[1];
 
-            Assert.AreEqual(1, state.dict.Count);
+            Assert.AreEqual(1, state.dict.count);
             Assert.AreEqual("1", added.nodeName);
             Assert.AreEqual("root/dict/1", added.nodePath);
             Assert.AreEqual(state.dict, added.parent);
@@ -56,7 +55,7 @@ namespace FofX.Stateful.Tests
             state.dict.Remove(1);
 
             Assert.AreEqual(true, added.disposed);
-            Assert.AreEqual(0, state.dict.Count);
+            Assert.AreEqual(0, state.dict.count);
 
             int addCount = 0;
             int removeCount = 0;
@@ -173,7 +172,7 @@ namespace FofX.Stateful.Tests
 
             state.dict.Clear();
 
-            Assert.AreEqual(0, state.dict.Count);
+            Assert.AreEqual(0, state.dict.count);
 
             disposed = false;
 
@@ -184,7 +183,7 @@ namespace FofX.Stateful.Tests
                 onRemove: x => children.Remove(x)
             );
 
-            Assert.AreEqual(state.dict.children.ToList(), children);
+            Assert.AreEqual(state.dict.values.ToList(), children);
 
             state.dict.Add(1);
             state.dict.Add(2);
@@ -193,11 +192,11 @@ namespace FofX.Stateful.Tests
             state.dict.Remove(5);
             state.dict.Remove(1);
 
-            Assert.AreEqual(state.dict.children.ToList(), children);
+            Assert.AreEqual(state.dict.values.ToList(), children);
 
             state.dict.Clear();
 
-            Assert.AreEqual(state.dict.children.ToList(), children);
+            Assert.AreEqual(state.dict.values.ToList(), children);
 
             childrenSubscription.Dispose();
 
@@ -272,7 +271,7 @@ namespace FofX.Stateful.Tests
                 yield return nestedChild;
         }
 
-        private void AssertStateOpArgsEquals(IStateOperation args, IStateNode source, OpType opType, object param, IStateNode child)
+        private void AssertStateOpArgsEquals(StateOperation args, IStateNode source, OpType opType, object param, IStateNode child)
         {
             Assert.AreEqual(source, args.source);
             Assert.AreEqual(opType, args.opType);
@@ -301,6 +300,135 @@ namespace FofX.Stateful.Tests
 
             Assert.AreEqual(2, callCount);
             Assert.AreEqual(new int[] { 1, 2, 3 }, value);
+        }
+
+        public class SerializationTestState : StateObject
+        {
+            public StateValue<int> value { get; private set; }
+            public StateDictionary<int, StateValue<string>> dict { get; private set; }
+            public StateList<StateValue<int>> list { get; private set; }
+            public StateValueSet<int> valueSet { get; private set; }
+            public StateValueArray<int> valueArray { get; private set; }
+
+            public StateValueView<int> valueView { get; private set; }
+            public StateDictionaryView<int, StateValueView<string>> dictView { get; private set; }
+            public StateListView<StateValueView<int>> listView { get; private set; }
+            public StateValueSetView<int> valueSetView { get; private set; }
+            public StateValueArrayView<int> valueArrayView { get; private set; }
+
+            protected override void PostInitializeInternal()
+            {
+                valueView.InitializeView(x => value.Subscribe(value => x.value = value));
+
+                dictView.InitializeView(x => dict.Subscribe(
+                    onAdd: kvp => x.Add(kvp.Key).InitializeView(y => kvp.Value.Subscribe(value => y.value = value)),
+                    onRemove: kvp => x.Remove(kvp.Key)
+                ));
+
+                listView.InitializeView(x => list.Subscribe(
+                    onAdd: (index, element) => x.Insert(index).InitializeView(y => element.Subscribe(value => y.value = value)),
+                    onRemove: (index, element) => x.RemoveAt(index)
+                ));
+
+                valueSetView.InitializeView(x => valueSet.Subscribe(
+                    onAdd: element => x.Add(element),
+                    onRemove: element => x.Remove(element)
+                ));
+
+                valueArrayView.InitializeView(x => valueArray.Subscribe(value => x.SetValue(value)));
+            }
+        }
+
+        [Test]
+        public void TestJSONSerialization()
+        {
+            var sourceState = new SerializationTestState();
+            sourceState.Initialize(new ObservationContext(), new DefaultLogger() { logLevel = LogLevel.Trace }, "root");
+
+            sourceState.value.value = 1;
+            sourceState.dict.Add(2).value = "dict entry";
+            sourceState.list.Add().value = 3;
+            sourceState.valueSet.Add(4);
+            sourceState.valueArray.SetValue(new int[] { 5 });
+
+            var json = sourceState.ToJSON(x => !x.isView);
+
+            var destState = new SerializationTestState();
+            destState.Initialize(new ObservationContext(), new DefaultLogger() { logLevel = LogLevel.Trace }, "root");
+
+            destState.FromJSON(json);
+
+            AssertAreEqualRecursive(sourceState, destState);
+        }
+
+        private void AssertAreEqualRecursive(IStateNode expected, IStateNode actual)
+        {
+            Assert.AreEqual(expected.GetType(), actual.GetType());
+
+            if (expected is IStateValue expectedValue)
+            {
+                IStateValue actualValue = (IStateValue)actual;
+                Assert.AreEqual(expectedValue.value, actualValue.value);
+            }
+            else if (expected is IStateValueSet expectedSet)
+            {
+                IStateValueSet actualSet = (IStateValueSet)actual;
+                Assert.That(actualSet, Is.EquivalentTo(expectedSet));
+            }
+            else if (expected is IStateValueArray expectedArray)
+            {
+                IStateValueArray actualArray = (IStateValueArray)actual;
+
+                Assert.AreEqual(expectedArray.count, actualArray.count);
+
+                for (int i = 0; i < expectedArray.count; i++)
+                    Assert.AreEqual(expectedArray[i], actualArray[i]);
+            }
+            else
+            {
+                foreach (var child in expected.children)
+                    AssertAreEqualRecursive(child, actual.GetChild(child.nodeName));
+            }
+        }
+
+        public class InvertDictionaryTestState : StateObject
+        {
+            public StateDictionary<int, StateValue<int>> sourceDict { get; private set; }
+            public StateDictionaryView<int, StateValueView<int>> destDict { get; private set; }
+
+            protected override void PostInitializeInternal()
+            {
+                destDict.InitializeView(x => sourceDict
+                    .ObservableToDictionary(x => x.Value.AsObservable(), x => x.Key)
+                    .Subscribe(
+                        onAdd: kvp => x.Add(kvp.Key).InitializeView(y => y.value = kvp.Value),
+                        onRemove: kvp => x.Remove(kvp.Key)
+                    )
+                );
+            }
+        }
+
+        [Test]
+        public void TestInvertedDictionary()
+        {
+            var state = new InvertDictionaryTestState();
+            state.Initialize(new ObservationContext(), new DefaultLogger() { logLevel = LogLevel.Trace }, "root");
+            state.sourceDict.Add(1).value = 4;
+            state.sourceDict.Add(2).value = 5;
+            state.sourceDict.Add(3).value = 6;
+            state.sourceDict[1].value = 7;
+
+            Assert.AreEqual(state.sourceDict.count, state.destDict.count);
+
+            foreach (var kvp in state.sourceDict)
+                Assert.AreEqual(kvp.Key, state.destDict[kvp.Value.value].value);
+
+            state.sourceDict.Clear();
+
+            Assert.AreEqual(state.sourceDict.count, state.destDict.count);
+
+            foreach (var kvp in state.sourceDict)
+                Assert.AreEqual(kvp.Key, state.destDict[kvp.Value.value].value);
         }
     }
 }

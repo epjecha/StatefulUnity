@@ -2,11 +2,11 @@
 // using System.Collections.Generic;
 // using System.Linq;
 // using ObserveThing;
-// using IStateObserver = ObserveThing.IObserver<FofX.Stateful.IStateOperation>;
+// using IStateObserver = ObserveThing.IObserver<FofX.Stateful.StateOperation>;
 
 // namespace FofX.Stateful
 // {
-//     public class CombineStateObservable : ObserveThing.IObservable<IStateOperation>, IDisposable
+//     public class CombineStateObservable : ObserveThing.IObservable<StateOperation>, IDisposable
 //     {
 //         private class ObserverData : IPendingObserver, IDisposable
 //         {
@@ -16,9 +16,9 @@
 //             public bool pending;
 //             public bool disposed { get; private set; }
 
-//             private List<IStateOperation> _pendingOperations;
-//             private List<IStateOperation> _pendingOperations1 = new List<IStateOperation>();
-//             private List<IStateOperation> _pendingOperations2 = new List<IStateOperation>();
+//             private List<StateOperation> _pendingOperations;
+//             private List<StateOperation> _pendingOperations1 = new List<StateOperation>();
+//             private List<StateOperation> _pendingOperations2 = new List<StateOperation>();
 
 //             private Action<ObserverData> _onDispose;
 
@@ -44,7 +44,7 @@
 //                 }
 //             }
 
-//             public void EnqueuePendingOperation(IStateOperation operation)
+//             public void EnqueuePendingOperation(StateOperation operation)
 //             {
 //                 _pendingOperations.Add(operation);
 //             }
@@ -93,8 +93,8 @@
 //         private Dictionary<IStateNode, IDisposable> _observables = new Dictionary<IStateNode, IDisposable>();
 //         private bool _initializingAddedState;
 
-//         private Queue<Operation<IStateOperation>> _opPool = new Queue<Operation<IStateOperation>>();
-//         private List<Operation<IStateOperation>> _opList = new List<Operation<IStateOperation>>();
+//         private Queue<Operation<StateOperation>> _opPool = new Queue<Operation<StateOperation>>();
+//         private List<Operation<StateOperation>> _opList = new List<Operation<StateOperation>>();
 
 //         public CombineStateObservable(ObservationContext context, ISetObservable<IStateNode> source, bool disposeOnSourceEmpty = false)
 //         {
@@ -117,7 +117,7 @@
 //             context.DeallocateObserverPriority(data.priority);
 //         }
 
-//         protected void HandleCombinedSourceChanged(IReadOnlyList<IStateOperation> operations)
+//         protected void HandleCombinedSourceChanged(IReadOnlyList<StateOperation> operations)
 //         {
 //             if (disposed)
 //                 throw new ObjectDisposedException(GetType().Name);
@@ -141,9 +141,9 @@
 //             context.NotifyPendingObserversIfNecessary();
 //         }
 
-//         protected IReadOnlyList<IStateOperation> GetInitializationOperations()
+//         protected IReadOnlyList<StateOperation> GetInitializationOperations()
 //         {
-//             List<IStateOperation> ops = new List<IStateOperation>();
+//             List<StateOperation> ops = new List<StateOperation>();
 //             foreach (var observable in _observables.Keys)
 //             {
 //                 var initSubscription = observable.Subscribe(x => ops.AddRange(x.Select(x => x.Clone())));
@@ -227,13 +227,13 @@
 //         }
 
 //         public IDisposable Subscribe(IObserver observer)
-//             => Subscribe(new Observer<IStateOperation>(
+//             => Subscribe(new Observer<StateOperation>(
 //                 onOperation: ops =>
 //                 {
 //                     foreach (var op in ops)
 //                     {
 //                         if (!_opPool.TryDequeue(out var operation))
-//                             operation = new Operation<IStateOperation>(this);
+//                             operation = new Operation<StateOperation>(this);
 
 //                         operation.value = op;
 //                         _opList.Add(operation);

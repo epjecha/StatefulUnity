@@ -22,7 +22,7 @@ namespace FofX.Stateful
                 _operand.Add(child);
         }
 
-        private void HandleSourceChanged(IStateOperation operation)
+        private void HandleSourceChanged(StateOperation operation)
         {
             if (_initializing)
                 return;

@@ -8,299 +8,150 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public interface IStateList : IEnumerable, IStateNode, IListObservable
+    public interface IReadOnlyStateList : IStateNode, IListObservable, IEnumerable
     {
         Type itemType { get; }
         IStateNode this[int index] { get; }
-        int Count { get; }
+        int count { get; }
+        int IndexOf(IStateNode node);
+        bool Contains(IStateNode node);
+    }
+
+    public interface IStateList : IReadOnlyStateList
+    {
         IStateNode Add();
         IStateNode Insert(int index);
         bool Remove(IStateNode node);
         void RemoveAt(int index);
-        int IndexOf(IStateNode node);
         void Clear();
     }
 
-    public struct StateListOperation<T> : IStateOperation where T : IStateNode
+    public interface IStateListViewMutator<T>
     {
-        public IStateNode source { get; set; }
-        public OpType opType { get; set; }
-        public T element { get; set; }
-        public uint elementId { get; set; }
-        public int index { get; set; }
-
-        object IStateOperation.param => index;
-        public IStateNode child => element;
-
-        public override string ToString()
-        {
-            return $"[{opType.ToString().ToUpper()}] source={source.nodePath} param={index}";
-        }
+        T Add();
+        T Insert(int index);
+        bool Remove(T node);
+        void RemoveAt(int index);
+        void Clear();
     }
 
-    public class StateList<T> : StateNode<IListObserver<T>, StateListOperation<T>>,
-        IStateList,
-        IListObservable<T>,
-        IEnumerable<T>
-        where T : IStateNode, new()
+    public class StateListView<T> : ReadOnlyStateList<T> where T : IStateNode, new()
     {
-        public int Count => _list.Count;
-        public T this[int index] => _list[index];
-        public override int childCount => _list.Count;
-        public override IEnumerable<IStateNode> children => _list.Select(x => (IStateNode)x);
-        public override bool derived => _deriveStream != null;
+        public override bool isView => true;
+        private Mutator _mutator;
+        private bool _viewInitialized;
+        private IDisposable _subscription;
 
-        public Type itemType => throw new NotImplementedException();
-
-        IStateNode IStateList.this[int index] => this[index];
-
-        private IDisposable _deriveStream;
-
-        IEnumerator<T> IEnumerable<T>.GetEnumerator()
-            => ((IEnumerable<T>)_list).GetEnumerator();
-
-        IEnumerator IEnumerable.GetEnumerator()
-            => ((IEnumerable)_list).GetEnumerator();
-
-        private List<T> _list = new List<T>();
-        private List<uint> _ids = new List<uint>();
-        private Func<T[]> _getInitialValue;
-        private CollectionIdProvider _idProvider;
-
-        public StateList() : this(default) { }
-
-        public StateList(Func<T[]> getInitialValue) : base()
+        private class Mutator : IStateListViewMutator<T>
         {
-            _getInitialValue = getInitialValue;
-            _idProvider = new CollectionIdProvider(_ids.Contains);
+            public Func<T> add;
+            public Func<int, T> insert;
+            public Func<T, bool> remove;
+            public Action<int> removeAt;
+            public Action clear;
+
+            public T Add()
+                => add();
+
+            public T Insert(int index)
+                => insert(index);
+
+            public bool Remove(T node)
+                => remove(node);
+
+            public void RemoveAt(int index)
+                => removeAt(index);
+
+            public void Clear()
+                => clear();
         }
 
-        protected override void InitializeInternal()
-        {
-            if (_getInitialValue == null)
-                return;
 
-            var initValues = _getInitialValue();
-            foreach (var element in _getInitialValue())
+        public StateListView() : base()
+        {
+            _mutator = new Mutator()
             {
-                var id = _idProvider.GetUnusedId();
-
-                _list.Add(element);
-                _ids.Add(id);
-            }
+                add = AddChild,
+                insert = InsertChild,
+                remove = RemoveChild,
+                removeAt = RemoveChildAt,
+                clear = ClearInternal
+            };
         }
 
-        protected override IEnumerable<StateListOperation<T>> GetInitializationOperations()
+        public void InitializeView(Action<IStateListViewMutator<T>> initialize)
         {
-            for (int i = 0; i < _list.Count; i++)
-                yield return new StateListOperation<T>() { source = this, index = i, elementId = _ids[i], opType = OpType.Add };
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
+            initialize(_mutator);
         }
 
-        protected override void SendStateOperation(IListObserver<T> observer, StateListOperation<T> operation)
+        public void InitializeView(Func<IStateListViewMutator<T>, IDisposable> initialize)
         {
-            if (operation.opType == OpType.Add)
-            {
-                observer.OnAdd(operation.elementId, operation.index, operation.element);
-            }
-            else if (operation.opType == OpType.Remove)
-            {
-                observer.OnRemove(operation.elementId, operation.index, operation.element);
-            }
-            else
-            {
-                throw new Exception($"Unhandled op type {operation.opType}");
-            }
-        }
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
 
-        protected override IStateNode GetChildInternal(string childName)
-            => _list[int.Parse(childName)];
-
-        protected override bool TryGetChildInternal(string childName, out IStateNode child)
-        {
-            var index = int.Parse(childName);
-            if (index >= _list.Count)
-            {
-                child = default;
-                return false;
-            }
-
-            child = _list[index];
-            return true;
-        }
-
-        private void InsertInternal(int index, T element)
-        {
-            if (element.parent == null)
-            {
-                element.Initialize(this, index.ToString());
-                element.PostInitialize();
-            }
-
-            var id = _idProvider.GetUnusedId();
-
-            _list.Insert(index, element);
-            _ids.Insert(index, id);
-
-            for (int i = index + 1; i < _list.Count; i++)
-                _list[i].Rename(i.ToString());
-
-            EnqueuePendingStateOperation(new() { source = this, opType = OpType.Add, elementId = id, index = index, element = element });
-        }
-
-        private void RemoveAtInternal(int index)
-        {
-            var element = _list[index];
-            var id = _ids[index];
-
-            _list.RemoveAt(index);
-            _ids.RemoveAt(index);
-
-            for (int i = index; i < _list.Count; i++)
-                _list[i].Rename(i.ToString());
-
-            if (element.parent == this)
-                element.Dispose();
-
-            EnqueuePendingStateOperation(new() { source = this, opType = OpType.Remove, elementId = id, index = index, element = element });
-        }
-
-        public T Add()
-            => Insert(_list.Count);
-
-        public T Insert(int index)
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-            T element = new T();
-            InsertInternal(index, element);
-
-            return element;
-        }
-
-        public bool Remove(T element)
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-            var index = _list.IndexOf(element);
-
-            if (index == -1)
-                return false;
-
-            RemoveAtInternal(index);
-            return true;
-        }
-
-        public void RemoveAt(int index)
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-            RemoveAtInternal(index);
-        }
-
-        public bool Contains(T element)
-            => _list.Contains(element);
-
-        public int IndexOf(T element)
-            => _list.IndexOf(element);
-
-        public void Clear()
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-            for (int i = _list.Count - 1; i >= 0; i--)
-                RemoveAtInternal(i);
+            _viewInitialized = true;
+            initialize(_mutator);
         }
 
         public override void CopyTo(IStateNode copyTo)
         {
-            var target = (StateList<T>)copyTo;
-
-            while (target.Count < Count)
-                target.Add();
-
-            while (target.Count > Count)
-                target.RemoveAt(target.Count - 1);
-
-            for (int i = 0; i < Count; i++)
-                _list[i].CopyTo(target[i]);
-        }
-
-        public override void Reset()
-        {
-            if (derived)
-                throw new Exception($"Directly editing derived state is not allowed. Path: {nodePath}");
-
-            Clear();
-
-            if (_getInitialValue != null)
-            {
-                foreach (var element in _getInitialValue())
-                    _list.Add(element);
-            }
-
-            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
+            logger.Warning($"{nodePath} is a view. \'CopyTo\' will be ignored.");
         }
 
         public override void FromJSON(JSONNode json)
         {
-            if (derived)
-            {
-                logger.Warning($"Attempted to write to derived state from JSON. This will be ignored. Path: {nodePath}");
-                return;
-            }
-
-            if (json == null)
-            {
-                Reset();
-                return;
-            }
-
-            JSONArray array = (JSONArray)json;
-
-            while (Count > array.Count)
-                RemoveAt(Count - 1);
-
-            while (Count < array.Count)
-                Add();
-
-            for (int i = 0; i < Count; i++)
-                _list[i].FromJSON(array[i]);
+            logger.Warning($"{nodePath} is a view. \'FromJSON\' will be ignored.");
         }
 
-        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
+        protected override void Reset()
         {
-            JSONArray array = new JSONArray();
-
-            for (int i = 0; i < _list.Count; i++)
-            {
-                var item = _list[i];
-                if (filter(item))
-                    array.Add(item.ToJSON(filter));
-            }
-
-            return array;
+            logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
+            
+            foreach (var child in ElementsInternal())
+                child.value.Reset();
         }
 
         protected override void DisposeInternal()
         {
-            foreach (var child in children)
-                child.Dispose();
-
-            _deriveStream?.Dispose();
+            _subscription?.Dispose();
+            base.DisposeInternal();
         }
+    }
 
-        public void Derive(IListObservable<T> source)
+    public class StateList<T> : ReadOnlyStateList<T>, IStateList where T : IStateNode, new()
+    {
+        public override bool isView => false;
+        private Action<ReadOnlyStateList<T>> _initializer;
+
+        public StateList() : this(default) { }
+        public StateList(Action<ReadOnlyStateList<T>> initializer) : base()
         {
-            _deriveStream = source.Subscribe(
-                onAdd: InsertInternal,
-                onRemove: (index, _) => RemoveAtInternal(index),
-                immediate: true
-            );
+            _initializer = initializer;
         }
+
+        protected override void InitializeInternal()
+        {
+            _initializer?.Invoke(this);
+        }
+
+        public T Insert(int index)
+            => InsertChild(index);
+
+        public void RemoveAt(int index)
+            => RemoveChildAt(index);
+
+        public T Add()
+            => AddChild();
+
+        public bool Remove(T element)
+            => RemoveChild(element);
+
+        public void Clear()
+            => ClearInternal();
 
         IStateNode IStateList.Add()
             => Add();
@@ -311,37 +162,232 @@ namespace FofX.Stateful
         bool IStateList.Remove(IStateNode node)
             => Remove((T)node);
 
-        int IStateList.IndexOf(IStateNode node)
+        protected override void Reset()
+        {
+            logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
+            Clear();
+            _initializer?.Invoke(this);
+        }
+
+        public override void FromJSON(JSONNode json)
+        {
+            if (json == null)
+            {
+                Reset();
+                return;
+            }
+
+            JSONArray array = (JSONArray)json;
+
+            while (count > array.Count)
+                RemoveAt(count - 1);
+
+            while (count < array.Count)
+                Add();
+
+            for (int i = 0; i < count; i++)
+                this[i].FromJSON(array[i]);
+        }
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            var target = (StateList<T>)copyTo;
+
+            while (target.count < count)
+                target.Add();
+
+            while (target.count > count)
+                target.RemoveAt(target.count - 1);
+
+            for (int i = 0; i < count; i++)
+                this[i].CopyTo(target[i]);
+        }
+    }
+
+    public abstract class ReadOnlyStateList<T> : ObservableListBase<T>,
+        IReadOnlyStateList,
+        IEnumerable<T>
+        where T : IStateNode, new()
+    {
+        public string nodeName { get; private set; }
+        public string nodePath { get; private set; }
+        public ILogger logger { get; private set; }
+        public IStateNode root { get; private set; }
+        public IStateNode parent { get; private set; }
+        public bool initialized { get; private set; }
+        public abstract bool isView { get; }
+
+        public int count => GetCountInternal();
+        public T this[int index] => ElementAtInternal(index);
+
+        public Type itemType => typeof(T);
+
+        IStateNode IReadOnlyStateList.this[int index] => this[index];
+
+        int IStateNode.childCount => GetCountInternal();
+        IEnumerable<IStateNode> IStateNode.children => ElementsInternal().Select(x => (IStateNode)x.value);
+
+        IEnumerator<T> IEnumerable<T>.GetEnumerator()
+            => ElementsInternal().Select(x => x.value).GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator()
+            => ElementsInternal().Select(x => x.value).GetEnumerator();
+
+        public ReadOnlyStateList() : base(default) { }
+
+        protected virtual void InitializeInternal() { }
+
+        protected override void SendOperation(IListObserver<T> observer, ListOp<T> operation)
+        {
+            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.index, operation.elementId, operation.element)}");
+            base.SendOperation(observer, operation);
+        }
+
+        protected T AddChild()
+            => InsertChild(count);
+
+        protected T InsertChild(int index)
+        {
+            var element = new T();
+            element.Initialize(this, index.ToString());
+
+            for (int i = index + 1; i < count; i++)
+                this[i].Rename(i.ToString());
+
+            InsertInternal(index, element);
+
+            return element;
+        }
+
+        protected bool RemoveChild(T element)
+        {
+            var index = IndexOfInternal(element);
+
+            if (index == -1)
+                return false;
+
+            RemoveChildAt(index);
+            return true;
+        }
+
+        protected void RemoveChildAt(int index)
+        {
+            var element = this[index];
+            element.Dispose();
+
+            for (int i = index; i < count; i++)
+                this[i].Rename(i.ToString());
+
+            RemoveAtInternal(index);
+        }
+
+        public bool Contains(T element)
+            => ContainsInternal(element);
+
+        public int IndexOf(T element)
+            => IndexOfInternal(element);
+
+        bool IReadOnlyStateList.Contains(IStateNode element)
+            => Contains((T)element);
+
+        int IReadOnlyStateList.IndexOf(IStateNode node)
             => IndexOf((T)node);
 
-        public override IDisposable Subscribe(ObserveThing.IObserver<IStateOperation> observer, bool immediate = false, uint? priority = null)
-            => Subscribe(new ListObserver<T>(
-                onAdd: (id, index, element) => observer.OnNext(new StateListOperation<T>() { source = this, elementId = id, index = index, element = element, opType = OpType.Add }),
-                onRemove: (id, index, element) => observer.OnNext(new StateListOperation<T>() { source = this, elementId = id, index = index, element = element, opType = OpType.Remove }),
-                onDispose: observer.OnDispose,
-                onError: observer.OnError
-            ), immediate, priority);
+        protected abstract void Reset();
+        protected override void DisposeInternal()
+        {
+            foreach (var child in ElementsInternal())
+                child.value.Dispose();
+        }
 
-        public IDisposable Subscribe(IListObserver observer, bool immediate = false, uint? priority = null)
-            => Subscribe(new ListObserver<T>(
-                onAdd: (id, index, element) => observer.OnAdd(id, index, element),
-                onRemove: (id, index, element) => observer.OnRemove(id, index, element),
-                onDispose: observer.OnDispose,
-                onError: observer.OnError
-            ), immediate, priority);
+        // IStateNode
+        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
+        {
+            this.context = context;
+            root = this;
+            this.logger = logger;
+            nodeName = name;
+            nodePath = name;
+            InitializeInternal();
+            initialized = true;
+            ((IStateNode)this).PostInitialize();
+        }
 
-        public IDisposable Subscribe(ICollectionObserver observer, bool immediate = false, uint? priority = null)
-            => Subscribe(new ListObserver<T>(
-                onAdd: (id, index, element) => observer.OnAdd(id, element),
-                onRemove: (id, index, element) => observer.OnRemove(id, element),
-                onDispose: observer.OnDispose,
-                onError: observer.OnError
-            ), immediate, priority);
+        public void Initialize(IStateNode parent, string name)
+        {
+            if (name == null)
+                throw new ArgumentNullException(nameof(name));
 
-        public IDisposable Subscribe(ICollectionObserver<T> observer, bool immediate = false, uint? priority = null)
+            if (initialized)
+                throw new Exception($"{nodePath} has already been initialized");
+
+            context = parent.context;
+            root = parent.root;
+            this.parent = parent;
+            logger = parent.logger;
+            nodeName = name;
+            nodePath = $"{parent.nodePath}/{nodeName}";
+            InitializeInternal();
+            initialized = true;
+        }
+
+        void IStateNode.PostInitialize()
+        {
+            foreach (var child in this)
+                child.PostInitialize();
+        }
+
+        public void Rename(string name)
+        {
+            nodeName = name;
+            nodePath = parent == null ? name : $"{parent}/{name}";
+            foreach (var child in ElementsInternal())
+                child.value.Rename(child.value.nodeName);
+        }
+
+        public IStateNode GetChild(string name)
+        {
+            var index = int.Parse(name);
+            return ElementAtInternal(index);
+        }
+
+        public bool TryGetChild(string name, out IStateNode child)
+        {
+            if (int.TryParse(name, out var index) && index < count)
+            {
+                child = ElementAtInternal(index);
+                return true;
+            }
+
+            child = default;
+            return false;
+        }
+
+        public abstract void CopyTo(IStateNode copyTo);
+        public abstract void FromJSON(JSONNode json);
+
+        public JSONNode ToJSON(Func<IStateNode, bool> filter)
+        {
+            JSONArray array = new JSONArray();
+
+            for (int i = 0; i < count; i++)
+            {
+                var item = this[i];
+                if (filter(item))
+                    array.Add(item.ToJSON(filter));
+            }
+
+            return array;
+        }
+
+        void IStateNode.Reset()
+            => Reset();
+
+        // IObserver<StateOperation>
+        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ListObserver<T>(
-                onAdd: (id, index, element) => observer.OnAdd(id, element),
-                onRemove: (id, index, element) => observer.OnRemove(id, element),
+                onAdd: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = index, child = element, elementId = id }),
+                onRemove: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = index, child = element, elementId = id }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);

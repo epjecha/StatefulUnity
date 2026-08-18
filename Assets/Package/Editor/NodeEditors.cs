@@ -13,7 +13,7 @@ namespace FofX.Stateful
         public static void DrawObservableNodeInspector(IStateNode node, HashSet<string> showStatuses, Dictionary<Type, Func<string, object, object>> additionalValueDrawers = null)
         {
             bool guiWasEnabled = GUI.enabled;
-            GUI.enabled = !node.derived;
+            GUI.enabled = !node.isView;
 
             if (node is IStateValue value)
             {
@@ -32,7 +32,7 @@ namespace FofX.Stateful
                     GUI.contentColor = currentColor;
                 }
             }
-            else if (node is IStateValueSet set)
+            else if (node is IReadOnlyStateValueSet set)
             {
                 if (HandleFoldout(node, showStatuses))
                 {
@@ -42,12 +42,12 @@ namespace FofX.Stateful
                     EditorGUI.indentLevel--;
                 }
             }
-            else if (node is IStateList list)
+            else if (node is IReadOnlyStateList list)
             {
                 if (HandleFoldout(node, showStatuses))
                 {
                     EditorGUI.indentLevel++;
-                    for (int i = 0; i < list.Count; i++)
+                    for (int i = 0; i < list.count; i++)
                         DrawObservableNodeInspector(list[i], showStatuses, additionalValueDrawers);
                     EditorGUI.indentLevel--;
                 }
