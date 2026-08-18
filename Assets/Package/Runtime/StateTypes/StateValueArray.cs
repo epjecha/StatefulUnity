@@ -83,7 +83,7 @@ namespace FofX.Stateful
             logger.Warning($"{nodePath} is a view. \'FromJSON\' will be ignored.");
         }
 
-        protected override void Reset()
+        public override void Reset()
         {
             logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
         }
@@ -124,7 +124,7 @@ namespace FofX.Stateful
         void IStateValueArray.SetValue(IEnumerable values)
             => SetValue(values.Cast<T>().ToArray());
 
-        protected override void Reset()
+        public override void Reset()
         {
             logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
             SetValueInternal(new T[0]);
@@ -186,8 +186,6 @@ namespace FofX.Stateful
             logger.Trace($"Notifying {Utility.FormatOperationLog(OpType.Set, this, $"[{string.Join(", ", operation.value)}]")}");
             base.SendOperation(observer, operation);
         }
-
-        protected abstract void Reset();
 
         // IStateNode
         public void Initialize(ObservationContext context, ILogger logger, string name = "root")
@@ -251,8 +249,7 @@ namespace FofX.Stateful
             return json;
         }
 
-        void IStateNode.Reset()
-            => Reset();
+        public abstract void Reset();
 
         // IObserver<StateOperation>
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)

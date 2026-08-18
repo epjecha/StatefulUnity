@@ -78,7 +78,7 @@ namespace FofX.Stateful
             logger.Warning($"{nodePath} is a view. \'FromJSON\' will be ignored.");
         }
 
-        protected override void Reset()
+        public override void Reset()
         {
             logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
         }
@@ -113,7 +113,7 @@ namespace FofX.Stateful
             _initializer?.Invoke(this);
         }
 
-        protected override void Reset()
+        public override void Reset()
         {
             logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
             value = default;
@@ -170,8 +170,6 @@ namespace FofX.Stateful
             base.SendOperation(observer, operation);
         }
 
-        protected abstract void Reset();
-
         // IStateNode
         public void Initialize(ObservationContext context, ILogger logger, string name = "root")
         {
@@ -226,8 +224,7 @@ namespace FofX.Stateful
         public JSONNode ToJSON(Func<IStateNode, bool> filter)
             => JSONSerialization.ToJSON(value);
 
-        void IStateNode.Reset()
-            => Reset();
+        public abstract void Reset();
 
         // IObserver<StateOperation>
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)

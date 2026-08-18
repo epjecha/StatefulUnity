@@ -112,7 +112,7 @@ namespace FofX.Stateful
             logger.Warning($"{nodePath} is a view. \'FromJSON\' will be ignored.");
         }
 
-        protected override void Reset()
+        public override void Reset()
         {
             logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
 
@@ -169,7 +169,7 @@ namespace FofX.Stateful
         bool IStateDictionary.Remove(object key)
             => RemoveChild((TKey)key);
 
-        protected override void Reset()
+        public override void Reset()
         {
             logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
             Clear();
@@ -305,7 +305,6 @@ namespace FofX.Stateful
             return false;
         }
 
-        protected abstract void Reset();
         protected override void DisposeInternal()
         {
             foreach (var child in GetValuesInternal())
@@ -380,8 +379,7 @@ namespace FofX.Stateful
             return dict;
         }
 
-        void IStateNode.Reset()
-            => Reset();
+        public abstract void Reset();
 
         // IObserver<StateOperation>
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
