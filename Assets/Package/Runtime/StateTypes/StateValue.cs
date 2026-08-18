@@ -90,7 +90,7 @@ namespace FofX.Stateful
         }
     }
 
-    public class StateValue<T> : ReadOnlyStateValue<T>
+    public class StateValue<T> : ReadOnlyStateValue<T>, IStateValue
     {
         public override bool isView => false;
 
@@ -98,6 +98,12 @@ namespace FofX.Stateful
         {
             get => _value;
             set => SetValueInternal(value);
+        }
+
+        object IStateValue.value
+        {
+            get => value;
+            set => this.value = (T)value;
         }
 
         private Action<StateValue<T>> _initializer;
