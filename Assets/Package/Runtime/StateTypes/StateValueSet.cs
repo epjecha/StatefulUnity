@@ -34,6 +34,11 @@ namespace FofX.Stateful
 
     public class StateValueSetView<T> : ReadOnlyStateValueSet<T>
     {
+        public override bool isView => true;
+        private Mutator _mutator;
+        private bool _viewInitialized;
+        private IDisposable _subscription;
+
         private class Mutator : IStateValueSetViewMutator<T>
         {
             public Func<T, bool> add;
@@ -50,10 +55,6 @@ namespace FofX.Stateful
                 => clear();
         }
 
-        public override bool isView => true;
-        private IDisposable _subscription;
-        private IStateValueSetViewMutator<T> _mutator;
-
         public StateValueSetView() : base()
         {
             _mutator = new Mutator()
@@ -64,8 +65,21 @@ namespace FofX.Stateful
             };
         }
 
+        public void InitializeView(Action<IStateValueSetViewMutator<T>> initialize)
+        {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
+            initialize(_mutator);
+        }
+
         public void InitializeView(Func<IStateValueSetViewMutator<T>, IDisposable> initialize)
         {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
             _subscription = initialize(_mutator);
         }
 
@@ -93,12 +107,10 @@ namespace FofX.Stateful
 
     public class StateValueSet<T> : ReadOnlyStateValueSet<T>, IStateValueSet
     {
+        public override bool isView => false;
         private Action<StateValueSet<T>> _initializer;
 
-        public override bool isView => false;
-
         public StateValueSet() : this(default(Action<StateValueSet<T>>)) { }
-
         public StateValueSet(params T[] elements) : this(x =>
         {
             foreach (var element in elements)
@@ -131,17 +143,6 @@ namespace FofX.Stateful
             ClearInternal();
         }
 
-        public override void CopyTo(IStateNode copyTo)
-        {
-            var target = (StateValueSet<T>)copyTo;
-
-            foreach (var toRemove in target.Except(GetElementsInternal().Select(x => x.Key)).ToArray())
-                target.Remove(toRemove);
-
-            foreach (var toAdd in GetElementsInternal().Select(x => x.Key).Except(target).ToArray())
-                target.Add(toAdd);
-        }
-
         bool IStateValueSet.Add(object element)
             => Add((T)element);
 
@@ -150,11 +151,9 @@ namespace FofX.Stateful
 
         protected override void Reset()
         {
+            logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
             Clear();
-
             _initializer?.Invoke(this);
-
-            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
 
         public override void FromJSON(JSONNode json)
@@ -173,6 +172,17 @@ namespace FofX.Stateful
             foreach (var value in array.Values)
                 Add(serializer.fromJSON(value));
         }
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            var target = (StateValueSet<T>)copyTo;
+
+            foreach (var toRemove in target.Except(GetElementsInternal().Select(x => x.Key)).ToArray())
+                target.Remove(toRemove);
+
+            foreach (var toAdd in GetElementsInternal().Select(x => x.Key).Except(target).ToArray())
+                target.Add(toAdd);
+        }
     }
 
     public abstract class ReadOnlyStateValueSet<T> : ObservableSetBase<T>,
@@ -190,10 +200,10 @@ namespace FofX.Stateful
 
         public int count => GetCountInternal();
 
+        Type IReadOnlyStateValueSet.elementType => typeof(T);
+
         int IStateNode.childCount => 0;
         IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
-
-        Type IReadOnlyStateValueSet.elementType => typeof(T);
 
         private IEnumerable<IStateNode> EmptyChildren()
         {
@@ -208,6 +218,22 @@ namespace FofX.Stateful
 
         public ReadOnlyStateValueSet() : base(null) { }
 
+        protected virtual void InitializeInternal() { }
+
+        protected override void SendOperation(ISetObserver<T> observer, SetOp<T> operation)
+        {
+            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.element, operation.elementId)}");
+            base.SendOperation(observer, operation);
+        }
+
+        public bool Contains(T element)
+            => ContainsInternal(element);
+
+        bool IReadOnlyStateValueSet.Contains(object element)
+            => Contains((T)element);
+
+        protected abstract void Reset();
+
         public void Initialize(ObservationContext context, ILogger logger, string name = "root")
         {
             this.context = context;
@@ -220,6 +246,7 @@ namespace FofX.Stateful
             ((IStateNode)this).PostInitialize();
         }
 
+        // IStateNode
         public void Initialize(IStateNode parent, string name)
         {
             if (name == null)
@@ -238,29 +265,24 @@ namespace FofX.Stateful
             initialized = true;
         }
 
-        protected virtual void InitializeInternal() { }
-
-        protected override void SendOperation(ISetObserver<T> observer, SetOp<T> operation)
-        {
-            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.element, operation.elementId)}");
-            base.SendOperation(observer, operation);
-        }
-
         void IStateNode.PostInitialize() { }
 
-        bool IReadOnlyStateValueSet.Contains(object element)
-            => Contains((T)element);
+        void IStateNode.Rename(string name)
+        {
+            nodeName = name;
+            nodePath = parent == null ? name : $"{parent}/{name}";
+        }
+
+        IStateNode IStateNode.GetChild(string name)
+            => throw new NotImplementedException();
+
+        bool IStateNode.TryGetChild(string name, out IStateNode child)
+        {
+            child = default;
+            return false;
+        }
 
         public abstract void CopyTo(IStateNode copyTo);
-
-        public bool Contains(T element)
-            => ContainsInternal(element);
-
-        protected abstract void Reset();
-
-        void IStateNode.Reset()
-            => Reset();
-
         public abstract void FromJSON(JSONNode json);
 
         public JSONNode ToJSON(Func<IStateNode, bool> filter)
@@ -274,21 +296,10 @@ namespace FofX.Stateful
             return array;
         }
 
-        public void Rename(string name)
-        {
-            nodeName = name;
-            nodePath = parent == null ? name : $"{parent}/{name}";
-        }
+        void IStateNode.Reset()
+            => Reset();
 
-        public IStateNode GetChild(string name)
-            => throw new NotImplementedException();
-
-        public bool TryGetChild(string name, out IStateNode child)
-        {
-            child = default;
-            return false;
-        }
-
+        // IObserver<StateOperation>
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new SetObserver<T>(
                 onAdd: (id, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = element, elementId = id }),

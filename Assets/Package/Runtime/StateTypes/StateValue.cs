@@ -30,6 +30,7 @@ namespace FofX.Stateful
     {
         public override bool isView => true;
         private Mutator _mutator;
+        private bool _viewInitialized;
         private IDisposable _subscription;
 
         private class Mutator : IStateValueViewMutator<T>
@@ -49,11 +50,37 @@ namespace FofX.Stateful
             _mutator = new Mutator() { get = () => _value, set = SetValueInternal };
         }
 
-        protected override void ResetInternal() { }
+        public void InitializeView(Action<IStateValueViewMutator<T>> initialize)
+        {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
+            initialize(_mutator);
+        }
 
         public void InitializeView(Func<IStateValueViewMutator<T>, IDisposable> initialize)
         {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
             _subscription = initialize(_mutator);
+        }
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            logger.Warning($"{nodePath} is a view. \'CopyTo\' will be ignored.");
+        }
+
+        public override void FromJSON(JSONNode json)
+        {
+            logger.Warning($"{nodePath} is a view. \'FromJSON\' will be ignored.");
+        }
+
+        protected override void Reset()
+        {
+            logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
         }
 
         protected override void DisposeInternal()
@@ -65,18 +92,17 @@ namespace FofX.Stateful
 
     public class StateValue<T> : ReadOnlyStateValue<T>
     {
+        public override bool isView => false;
+
         new public T value
         {
             get => _value;
             set => SetValueInternal(value);
         }
 
-        public override bool isView => false;
-
         private Action<StateValue<T>> _initializer;
 
-        public StateValue() : base() { }
-
+        public StateValue() : this(default) { }
         public StateValue(Action<StateValue<T>> initializer) : base()
         {
             _initializer = initializer;
@@ -87,13 +113,26 @@ namespace FofX.Stateful
             _initializer?.Invoke(this);
         }
 
-        protected override void ResetInternal()
+        protected override void Reset()
         {
             logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
-
             value = default;
             _initializer?.Invoke(this);
         }
+
+        public override void FromJSON(JSONNode json)
+        {
+            if (json == null)
+            {
+                Reset();
+                return;
+            }
+
+            SetValueInternal(JSONSerialization.FromJSON<T>(json));
+        }
+
+        public override void CopyTo(IStateNode copyTo)
+            => ((StateValue<T>)copyTo).SetValueInternal(value);
     }
 
     public abstract class ReadOnlyStateValue<T> : ObservableValueBase<T>,
@@ -131,7 +170,7 @@ namespace FofX.Stateful
             base.SendOperation(observer, operation);
         }
 
-        protected abstract void ResetInternal();
+        protected abstract void Reset();
 
         // IStateNode
         public void Initialize(ObservationContext context, ILogger logger, string name = "root")
@@ -181,31 +220,14 @@ namespace FofX.Stateful
             return false;
         }
 
-        public void CopyTo(IStateNode copyTo)
-            => ((ReadOnlyStateValue<T>)copyTo).SetValueInternal(value);
-
-        public void FromJSON(JSONNode json)
-        {
-            if (isView)
-            {
-                logger.Warning($"Attempted to write to derived state from JSON. This will be ignored. Path: {nodePath}");
-                return;
-            }
-
-            if (json == null)
-            {
-                ResetInternal();
-                return;
-            }
-
-            SetValueInternal(JSONSerialization.FromJSON<T>(json));
-        }
+        public abstract void CopyTo(IStateNode copyTo);
+        public abstract void FromJSON(JSONNode json);
 
         public JSONNode ToJSON(Func<IStateNode, bool> filter)
             => JSONSerialization.ToJSON(value);
 
         void IStateNode.Reset()
-            => ResetInternal();
+            => Reset();
 
         // IObserver<StateOperation>
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)

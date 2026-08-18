@@ -37,6 +37,11 @@ namespace FofX.Stateful
 
     public class StateListView<T> : ReadOnlyStateList<T> where T : IStateNode, new()
     {
+        public override bool isView => true;
+        private Mutator _mutator;
+        private bool _viewInitialized;
+        private IDisposable _subscription;
+
         private class Mutator : IStateListViewMutator<T>
         {
             public Func<T> add;
@@ -61,10 +66,6 @@ namespace FofX.Stateful
                 => clear();
         }
 
-        public override bool isView => true;
-
-        private IDisposable _subscription;
-        private Mutator _mutator;
 
         public StateListView() : base()
         {
@@ -78,9 +79,22 @@ namespace FofX.Stateful
             };
         }
 
+        public void InitializeView(Action<IStateListViewMutator<T>> initialize)
+        {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
+            initialize(_mutator);
+        }
+
         public void InitializeView(Func<IStateListViewMutator<T>, IDisposable> initialize)
         {
-            _subscription = initialize(_mutator);
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
+            initialize(_mutator);
         }
 
         public override void CopyTo(IStateNode copyTo)
@@ -88,16 +102,17 @@ namespace FofX.Stateful
             logger.Warning($"{nodePath} is a view. \'CopyTo\' will be ignored.");
         }
 
-        protected override void Reset()
-        {
-            logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
-            foreach (var child in ElementsInternal())
-                child.value.Reset();
-        }
-
         public override void FromJSON(JSONNode json)
         {
             logger.Warning($"{nodePath} is a view. \'FromJSON\' will be ignored.");
+        }
+
+        protected override void Reset()
+        {
+            logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
+            
+            foreach (var child in ElementsInternal())
+                child.value.Reset();
         }
 
         protected override void DisposeInternal()
@@ -110,13 +125,17 @@ namespace FofX.Stateful
     public class StateList<T> : ReadOnlyStateList<T>, IStateList where T : IStateNode, new()
     {
         public override bool isView => false;
-        private Action<ReadOnlyStateList<T>> _initializeState;
+        private Action<ReadOnlyStateList<T>> _initializer;
 
         public StateList() : this(default) { }
-
-        public StateList(Action<ReadOnlyStateList<T>> initializeState) : base()
+        public StateList(Action<ReadOnlyStateList<T>> initializer) : base()
         {
-            _initializeState = initializeState;
+            _initializer = initializer;
+        }
+
+        protected override void InitializeInternal()
+        {
+            _initializer?.Invoke(this);
         }
 
         public T Insert(int index)
@@ -134,27 +153,20 @@ namespace FofX.Stateful
         public void Clear()
             => ClearInternal();
 
+        IStateNode IStateList.Add()
+            => Add();
+
+        IStateNode IStateList.Insert(int index)
+            => Insert(index);
+
+        bool IStateList.Remove(IStateNode node)
+            => Remove((T)node);
+
         protected override void Reset()
         {
+            logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
             Clear();
-
-            _initializeState?.Invoke(this);
-
-            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
-        }
-
-        public override void CopyTo(IStateNode copyTo)
-        {
-            var target = (StateList<T>)copyTo;
-
-            while (target.count < count)
-                target.Add();
-
-            while (target.count > count)
-                target.RemoveAt(target.count - 1);
-
-            for (int i = 0; i < count; i++)
-                this[i].CopyTo(target[i]);
+            _initializer?.Invoke(this);
         }
 
         public override void FromJSON(JSONNode json)
@@ -177,14 +189,19 @@ namespace FofX.Stateful
                 this[i].FromJSON(array[i]);
         }
 
-        IStateNode IStateList.Add()
-            => Add();
+        public override void CopyTo(IStateNode copyTo)
+        {
+            var target = (StateList<T>)copyTo;
 
-        IStateNode IStateList.Insert(int index)
-            => Insert(index);
+            while (target.count < count)
+                target.Add();
 
-        bool IStateList.Remove(IStateNode node)
-            => Remove((T)node);
+            while (target.count > count)
+                target.RemoveAt(target.count - 1);
+
+            for (int i = 0; i < count; i++)
+                this[i].CopyTo(target[i]);
+        }
     }
 
     public abstract class ReadOnlyStateList<T> : ObservableListBase<T>,
@@ -192,7 +209,6 @@ namespace FofX.Stateful
         IEnumerable<T>
         where T : IStateNode, new()
     {
-        public Type itemType => typeof(T);
         public string nodeName { get; private set; }
         public string nodePath { get; private set; }
         public ILogger logger { get; private set; }
@@ -204,7 +220,10 @@ namespace FofX.Stateful
         public int count => GetCountInternal();
         public T this[int index] => ElementAtInternal(index);
 
+        public Type itemType => typeof(T);
+
         IStateNode IReadOnlyStateList.this[int index] => this[index];
+
         int IStateNode.childCount => GetCountInternal();
         IEnumerable<IStateNode> IStateNode.children => ElementsInternal().Select(x => (IStateNode)x.value);
 
@@ -216,43 +235,7 @@ namespace FofX.Stateful
 
         public ReadOnlyStateList() : base(default) { }
 
-        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
-        {
-            this.context = context;
-            root = this;
-            this.logger = logger;
-            nodeName = name;
-            nodePath = name;
-            InitializeInternal();
-            initialized = true;
-            ((IStateNode)this).PostInitialize();
-        }
-
-        public void Initialize(IStateNode parent, string name)
-        {
-            if (name == null)
-                throw new ArgumentNullException(nameof(name));
-
-            if (initialized)
-                throw new Exception($"{nodePath} has already been initialized");
-
-            context = parent.context;
-            root = parent.root;
-            this.parent = parent;
-            logger = parent.logger;
-            nodeName = name;
-            nodePath = $"{parent.nodePath}/{nodeName}";
-            InitializeInternal();
-            initialized = true;
-        }
-
         protected virtual void InitializeInternal() { }
-
-        void IStateNode.PostInitialize()
-        {
-            foreach (var child in this)
-                child.PostInitialize();
-        }
 
         protected override void SendOperation(IListObserver<T> observer, ListOp<T> operation)
         {
@@ -307,33 +290,51 @@ namespace FofX.Stateful
         bool IReadOnlyStateList.Contains(IStateNode element)
             => Contains((T)element);
 
-        public abstract void CopyTo(IStateNode copyTo);
+        int IReadOnlyStateList.IndexOf(IStateNode node)
+            => IndexOf((T)node);
 
         protected abstract void Reset();
-
-        void IStateNode.Reset()
-            => Reset();
-
-        public abstract void FromJSON(JSONNode json);
-
-        public JSONNode ToJSON(Func<IStateNode, bool> filter)
-        {
-            JSONArray array = new JSONArray();
-
-            for (int i = 0; i < count; i++)
-            {
-                var item = this[i];
-                if (filter(item))
-                    array.Add(item.ToJSON(filter));
-            }
-
-            return array;
-        }
-
         protected override void DisposeInternal()
         {
             foreach (var child in ElementsInternal())
                 child.value.Dispose();
+        }
+
+        // IStateNode
+        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
+        {
+            this.context = context;
+            root = this;
+            this.logger = logger;
+            nodeName = name;
+            nodePath = name;
+            InitializeInternal();
+            initialized = true;
+            ((IStateNode)this).PostInitialize();
+        }
+
+        public void Initialize(IStateNode parent, string name)
+        {
+            if (name == null)
+                throw new ArgumentNullException(nameof(name));
+
+            if (initialized)
+                throw new Exception($"{nodePath} has already been initialized");
+
+            context = parent.context;
+            root = parent.root;
+            this.parent = parent;
+            logger = parent.logger;
+            nodeName = name;
+            nodePath = $"{parent.nodePath}/{nodeName}";
+            InitializeInternal();
+            initialized = true;
+        }
+
+        void IStateNode.PostInitialize()
+        {
+            foreach (var child in this)
+                child.PostInitialize();
         }
 
         public void Rename(string name)
@@ -362,9 +363,27 @@ namespace FofX.Stateful
             return false;
         }
 
-        int IReadOnlyStateList.IndexOf(IStateNode node)
-            => IndexOf((T)node);
+        public abstract void CopyTo(IStateNode copyTo);
+        public abstract void FromJSON(JSONNode json);
 
+        public JSONNode ToJSON(Func<IStateNode, bool> filter)
+        {
+            JSONArray array = new JSONArray();
+
+            for (int i = 0; i < count; i++)
+            {
+                var item = this[i];
+                if (filter(item))
+                    array.Add(item.ToJSON(filter));
+            }
+
+            return array;
+        }
+
+        void IStateNode.Reset()
+            => Reset();
+
+        // IObserver<StateOperation>
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ListObserver<T>(
                 onAdd: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = index, child = element, elementId = id }),

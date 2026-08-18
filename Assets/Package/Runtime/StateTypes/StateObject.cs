@@ -20,7 +20,6 @@ namespace FofX.Stateful
         public IEnumerable<IStateNode> children => _children.Values;
         public bool isView => false;
 
-
         private Dictionary<string, IStateNode> _children = new Dictionary<string, IStateNode>();
 
         public StateObject() : base(null) { }
@@ -112,7 +111,7 @@ namespace FofX.Stateful
 
         public void CopyTo(StateObject copyTo)
         {
-            foreach (var child in children)
+            foreach (var child in children.Where(x => !x.isView))
             {
                 var destChild = copyTo.GetChild(child.nodeName);
 
@@ -137,7 +136,7 @@ namespace FofX.Stateful
                 return;
             }
 
-            foreach (var child in children)
+            foreach (var child in children.Where(x => !x.isView))
                 child.FromJSON(json[child.nodeName]);
         }
 

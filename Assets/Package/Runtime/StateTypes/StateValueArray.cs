@@ -8,12 +8,6 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
-    public interface IStateValueArray : IReadOnlyStateValueArray
-    {
-        void SetValue(IEnumerable values);
-        void Clear();
-    }
-
     public interface IReadOnlyStateValueArray : IStateNode, IEnumerable, IValueObservable
     {
         int count { get; }
@@ -21,9 +15,63 @@ namespace FofX.Stateful
         object this[int index] { get; }
     }
 
+    public interface IStateValueArray : IReadOnlyStateValueArray
+    {
+        void SetValue(IEnumerable values);
+        void Clear();
+    }
+
+    public interface IStateValueArrayViewMutator<T>
+    {
+        void SetValue(IReadOnlyList<T> value);
+        void Clear();
+    }
+
     public class StateValueArrayView<T> : ReadOnlyStateValueArray<T>
     {
         public override bool isView => true;
+        private Mutator _mutator;
+        private bool _viewInitialized;
+        private IDisposable _subscription;
+
+        private class Mutator : IStateValueArrayViewMutator<T>
+        {
+            public Action<IReadOnlyList<T>> setValue;
+            public Action clear;
+
+            public void SetValue(IReadOnlyList<T> value)
+                => setValue(value);
+
+            public void Clear()
+                => clear();
+        }
+
+        public StateValueArrayView() : base()
+        {
+            _mutator = new Mutator()
+            {
+                setValue = SetValueInternal,
+                clear = () => SetValueInternal(new T[0])
+            };
+        }
+
+        public void InitializeView(Action<IStateValueArrayViewMutator<T>> initialize)
+        {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
+            initialize(_mutator);
+        }
+
+        public void InitializeView(Func<IStateValueArrayViewMutator<T>, IDisposable> initialize)
+        {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
+            initialize(_mutator);
+        }
 
         public override void CopyTo(IStateNode copyTo)
         {
@@ -39,9 +87,17 @@ namespace FofX.Stateful
         {
             logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
         }
+
+        protected override void DisposeInternal()
+        {
+            base.DisposeInternal();
+            _subscription?.Dispose();
+        }
     }
 
-    public class StateValueArray<T> : ReadOnlyStateValueArray<T>, IStateValueArray
+    public class StateValueArray<T> : ReadOnlyStateValueArray<T>,
+        IStateValueArray,
+        IValueObservable<IReadOnlyList<T>>
     {
         public override bool isView => false;
         private Action<StateValueArray<T>> _initializer;
@@ -54,6 +110,11 @@ namespace FofX.Stateful
             _initializer = initializer;
         }
 
+        protected override void InitializeInternal()
+        {
+            _initializer?.Invoke(this);
+        }
+
         public void SetValue(T[] value)
             => SetValueInternal(value);
 
@@ -63,23 +124,23 @@ namespace FofX.Stateful
         void IStateValueArray.SetValue(IEnumerable values)
             => SetValue(values.Cast<T>().ToArray());
 
-        public override void CopyTo(IStateNode copyTo)
-        {
-            var target = (StateValueArray<T>)copyTo;
-            target.SetValue(_value.ToArray());
-        }
-
         protected override void Reset()
         {
+            logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
             SetValueInternal(new T[0]);
             _initializer?.Invoke(this);
-            logger.Generic(LogLevel.Trace, $"Reset {nodePath}");
         }
 
         public override void FromJSON(JSONNode json)
         {
             var serializer = JSONSerialization.GetSerializer<T>();
             SetValueInternal(((JSONArray)json).Linq.Select(x => serializer.fromJSON(x)).ToArray());
+        }
+
+        public override void CopyTo(IStateNode copyTo)
+        {
+            var target = (StateValueArray<T>)copyTo;
+            target.SetValue(_value.ToArray());
         }
     }
 
@@ -118,6 +179,17 @@ namespace FofX.Stateful
 
         public ReadOnlyStateValueArray() : base(default) { }
 
+        protected virtual void InitializeInternal() { }
+
+        protected override void SendOperation(IValueObserver<IReadOnlyList<T>> observer, ValueOp<IReadOnlyList<T>> operation)
+        {
+            logger.Trace($"Notifying {Utility.FormatOperationLog(OpType.Set, this, $"[{string.Join(", ", operation.value)}]")}");
+            base.SendOperation(observer, operation);
+        }
+
+        protected abstract void Reset();
+
+        // IStateNode
         public void Initialize(ObservationContext context, ILogger logger, string name = "root")
         {
             this.context = context;
@@ -148,22 +220,25 @@ namespace FofX.Stateful
             initialized = true;
         }
 
-        protected virtual void InitializeInternal() { }
-
         void IStateNode.PostInitialize() { }
 
-        protected override void SendOperation(IValueObserver<IReadOnlyList<T>> observer, ValueOp<IReadOnlyList<T>> operation)
+        public void Rename(string name)
         {
-            logger.Trace($"Notifying {Utility.FormatOperationLog(OpType.Set, this, $"[{string.Join(", ", operation.value)}]")}");
-            base.SendOperation(observer, operation);
+            nodeName = name;
+            nodePath = parent == null ? name : $"{parent}/{name}";
+        }
+
+        IStateNode IStateNode.GetChild(string name)
+            => throw new NotImplementedException();
+
+        bool IStateNode.TryGetChild(string name, out IStateNode child)
+        {
+            child = default;
+            return false;
         }
 
         public abstract void CopyTo(IStateNode copyTo);
-
-        protected abstract void Reset();
-
-        void IStateNode.Reset()
-            => Reset();
+        public abstract void FromJSON(JSONNode json);
 
         public JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
@@ -176,23 +251,10 @@ namespace FofX.Stateful
             return json;
         }
 
-        public abstract void FromJSON(JSONNode json);
+        void IStateNode.Reset()
+            => Reset();
 
-        public void Rename(string name)
-        {
-            nodeName = name;
-            nodePath = parent == null ? name : $"{parent}/{name}";
-        }
-
-        public IStateNode GetChild(string name)
-            => throw new NotImplementedException();
-
-        public bool TryGetChild(string name, out IStateNode child)
-        {
-            child = default;
-            return false;
-        }
-
+        // IObserver<StateOperation>
         public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ValueObserver<IReadOnlyList<T>>(
                 onNext: x => observer.OnNext(new StateOperation() { source = this, opType = OpType.Set, param = x }),

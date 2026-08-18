@@ -41,8 +41,9 @@ namespace FofX.Stateful
     public class StateDictionaryView<TKey, TValue> : ReadOnlyStateDictionary<TKey, TValue> where TValue : IStateNode, new()
     {
         public override bool isView => true;
+        private Mutator _mutator;
+        private bool _viewInitialized;
         private IDisposable _subscription;
-        private IStateDictionaryViewMutator<TKey, TValue> _mutator;
 
         private class Mutator : IStateDictionaryViewMutator<TKey, TValue>
         {
@@ -68,15 +69,28 @@ namespace FofX.Stateful
         {
             _mutator = new Mutator()
             {
-                add = AddState,
-                remove = RemoveState,
+                add = AddChild,
+                remove = RemoveChild,
                 getOrAdd = GetOrAdd,
                 clear = ClearInternal
             };
         }
 
+        public void InitializeView(Action<IStateDictionaryViewMutator<TKey, TValue>> initialize)
+        {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
+            initialize(_mutator);
+        }
+
         public void InitializeView(Func<IStateDictionaryViewMutator<TKey, TValue>, IDisposable> initialize)
         {
+            if (_viewInitialized)
+                throw new Exception($"View already initialized. Path: {nodePath}");
+
+            _viewInitialized = true;
             _subscription = initialize(_mutator);
         }
 
@@ -85,7 +99,7 @@ namespace FofX.Stateful
             if (TryGetValue(key, out var value))
                 return value;
 
-            return AddState(key);
+            return AddChild(key);
         }
 
         public override void CopyTo(IStateNode copyTo)
@@ -116,9 +130,9 @@ namespace FofX.Stateful
     public class StateDictionary<TKey, TValue> : ReadOnlyStateDictionary<TKey, TValue>, IStateDictionary where TValue : IStateNode, new()
     {
         public override bool isView => false;
-
         private Action<StateDictionary<TKey, TValue>> _initializer;
 
+        public StateDictionary() : this(default) { }
         public StateDictionary(Action<StateDictionary<TKey, TValue>> initializer = default) : base()
         {
             _initializer = initializer;
@@ -130,17 +144,17 @@ namespace FofX.Stateful
         }
 
         public TValue Add(TKey key)
-            => AddState(key);
+            => AddChild(key);
 
         public bool Remove(TKey key)
-            => RemoveState(key);
+            => RemoveChild(key);
 
         public TValue GetOrAdd(TKey key)
         {
             if (TryGetValue(key, out var value))
                 return value;
 
-            return AddState(key);
+            return AddChild(key);
         }
 
         public void Clear()
@@ -149,20 +163,35 @@ namespace FofX.Stateful
         public IStateNode GetOrAdd(object key)
             => GetOrAdd((TKey)key);
 
+        public IStateNode Add(object key)
+            => AddChild((TKey)key);
+
+        bool IStateDictionary.Remove(object key)
+            => RemoveChild((TKey)key);
+
         protected override void Reset()
         {
             logger.Generic(LogLevel.Trace, $"Resetting {nodePath}");
-
             Clear();
-
             _initializer?.Invoke(this);
         }
 
-        public IStateNode Add(object key)
-            => AddState((TKey)key);
+        public override void FromJSON(JSONNode json)
+        {
+            if (json == null)
+            {
+                Reset();
+                return;
+            }
 
-        bool IStateDictionary.Remove(object key)
-            => RemoveState((TKey)key);
+            JSONObject dict = (JSONObject)json;
+            SerializationPair<TKey> serializer = JSONSerialization.GetSerializer<TKey>();
+
+            Reset();
+
+            foreach (var value in dict)
+                AddChild(serializer.fromJSON(value.Key)).FromJSON(value.Value);
+        }
 
         public override void CopyTo(IStateNode copyTo)
         {
@@ -180,23 +209,6 @@ namespace FofX.Stateful
 
                 kvpToCopy.Value.value.CopyTo(child);
             }
-        }
-
-        public override void FromJSON(JSONNode json)
-        {
-            if (json == null)
-            {
-                Reset();
-                return;
-            }
-
-            JSONObject dict = (JSONObject)json;
-            SerializationPair<TKey> serializer = JSONSerialization.GetSerializer<TKey>();
-
-            Reset();
-
-            foreach (var value in dict)
-                AddState(serializer.fromJSON(value.Key)).FromJSON(value.Value);
         }
     }
 
@@ -245,7 +257,7 @@ namespace FofX.Stateful
             base.SendOperation(observer, operation);
         }
 
-        protected TValue AddState(TKey key)
+        protected TValue AddChild(TKey key)
         {
             TValue value = new TValue();
 
@@ -260,7 +272,7 @@ namespace FofX.Stateful
             return value;
         }
 
-        protected bool RemoveState(TKey key)
+        protected bool RemoveChild(TKey key)
         {
             if (!TryGetValueInternal(key, out var value))
                 return false;
@@ -270,13 +282,6 @@ namespace FofX.Stateful
             RemoveInternal(key);
 
             return true;
-        }
-
-        protected abstract void Reset();
-        protected override void DisposeInternal()
-        {
-            foreach (var child in GetValuesInternal())
-                child.Dispose();
         }
 
         public bool ContainsKey(TKey key)
@@ -298,6 +303,13 @@ namespace FofX.Stateful
 
             value = default;
             return false;
+        }
+
+        protected abstract void Reset();
+        protected override void DisposeInternal()
+        {
+            foreach (var child in GetValuesInternal())
+                child.Dispose();
         }
 
         // IStateNode
@@ -353,8 +365,8 @@ namespace FofX.Stateful
             child = ElementsInternal().FirstOrDefault(x => x.Key.ToString() == name).Value.value;
             return child != null;
         }
-        public abstract void CopyTo(IStateNode copyTo);
 
+        public abstract void CopyTo(IStateNode copyTo);
         public abstract void FromJSON(JSONNode json);
 
         public JSONNode ToJSON(Func<IStateNode, bool> filter)
