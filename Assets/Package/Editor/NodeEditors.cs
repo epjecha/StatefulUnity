@@ -13,7 +13,6 @@ namespace FofX.Stateful
         public static void DrawObservableNodeInspector(IStateNode node, HashSet<string> showStatuses, Dictionary<Type, Func<string, object, object>> additionalValueDrawers = null)
         {
             bool guiWasEnabled = GUI.enabled;
-            GUI.enabled = !node.isView;
 
             if (node is IStateValue value)
             {
@@ -32,7 +31,7 @@ namespace FofX.Stateful
                     GUI.contentColor = currentColor;
                 }
             }
-            else if (node is IReadOnlyStateValueSet set)
+            else if (node is IStateValueSet set)
             {
                 if (HandleFoldout(node, showStatuses))
                 {
@@ -42,7 +41,7 @@ namespace FofX.Stateful
                     EditorGUI.indentLevel--;
                 }
             }
-            else if (node is IReadOnlyStateList list)
+            else if (node is IStateList list)
             {
                 if (HandleFoldout(node, showStatuses))
                 {
@@ -61,6 +60,59 @@ namespace FofX.Stateful
                         DrawObservableNodeInspector(child, showStatuses, additionalValueDrawers);
                     EditorGUI.indentLevel--;
                 }
+            }
+            else if (node is IReadOnlyStateValue readonlyValue)
+            {
+                GUI.enabled = false;
+                try
+                {
+                    object prevValue = readonlyValue.value;
+                    object newValue = DrawPrimitiveField(node.nodeName, prevValue, readonlyValue.valueType, additionalValueDrawers);
+                }
+                catch
+                {
+                    Color currentColor = GUI.contentColor;
+                    GUI.contentColor = Color.yellow;
+                    EditorGUILayout.LabelField(node.nodeName, $"No drawer for type {readonlyValue.valueType}");
+                    GUI.contentColor = currentColor;
+                }
+                GUI.enabled = guiWasEnabled;
+            }
+            else if (node is IReadOnlyStateValueSet readonlySet)
+            {
+                GUI.enabled = false;
+                if (HandleFoldout(node, showStatuses))
+                {
+                    EditorGUI.indentLevel++;
+                    foreach (object element in readonlySet)
+                        EditorGUILayout.LabelField(element.ToString());
+                    EditorGUI.indentLevel--;
+                }
+                GUI.enabled = guiWasEnabled;
+            }
+            else if (node is IReadOnlyStateList readonlyList)
+            {
+                GUI.enabled = false;
+                if (HandleFoldout(node, showStatuses))
+                {
+                    EditorGUI.indentLevel++;
+                    for (int i = 0; i < readonlyList.count; i++)
+                        DrawObservableNodeInspector(readonlyList[i], showStatuses, additionalValueDrawers);
+                    EditorGUI.indentLevel--;
+                }
+                GUI.enabled = guiWasEnabled;
+            }
+            else if (node is IReadOnlyStateDictionary)
+            {
+                GUI.enabled = false;
+                if (HandleFoldout(node, showStatuses))
+                {
+                    EditorGUI.indentLevel++;
+                    foreach (IStateNode child in node.children.OrderBy(x => x.nodeName))
+                        DrawObservableNodeInspector(child, showStatuses, additionalValueDrawers);
+                    EditorGUI.indentLevel--;
+                }
+                GUI.enabled = guiWasEnabled;
             }
             else if (node is StateObject)
             {
