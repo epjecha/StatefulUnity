@@ -77,7 +77,7 @@ namespace FofX.Stateful
                 dict.Remove(toRemove);
         }
 
-        public static string FormatOperationLog(OpType opType, IStateNode source, object param = default, uint elementId = default, IStateNode child = default)
-            => $"[{opType}] source={source.nodePath} param={param?.ToString() ?? "NULL"} elementId={elementId} child={child?.nodeName ?? "NULL"}";
+        public static string FormatOperationLog(OpType opType, IStateNode source, object param = default, IStateNode child = default)
+            => $"[{opType}] source={source.nodePath} param={param?.ToString() ?? "NULL"} child={child?.nodeName ?? "NULL"}";
     }
 }

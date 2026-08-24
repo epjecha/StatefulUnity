@@ -69,8 +69,8 @@ namespace FofX.Stateful
         {
             _mutator = new Mutator()
             {
-                add = AddChild,
-                remove = RemoveChild,
+                add = AddInternal,
+                remove = RemoveInternal,
                 getOrAdd = GetOrAdd,
                 clear = ClearInternal
             };
@@ -99,7 +99,7 @@ namespace FofX.Stateful
             if (TryGetValue(key, out var value))
                 return value;
 
-            return AddChild(key);
+            return AddInternal(key);
         }
 
         public override void CopyTo(IStateNode copyTo)
@@ -116,7 +116,7 @@ namespace FofX.Stateful
         {
             logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
 
-            foreach (var child in GetValuesInternal())
+            foreach (var child in values)
                 child.Reset();
         }
 
@@ -140,21 +140,22 @@ namespace FofX.Stateful
 
         protected override void InitializeInternal()
         {
+            base.InitializeInternal();
             _initializer?.Invoke(this);
         }
 
         public TValue Add(TKey key)
-            => AddChild(key);
+            => AddInternal(key);
 
         public bool Remove(TKey key)
-            => RemoveChild(key);
+            => RemoveInternal(key);
 
         public TValue GetOrAdd(TKey key)
         {
             if (TryGetValue(key, out var value))
                 return value;
 
-            return AddChild(key);
+            return AddInternal(key);
         }
 
         public void Clear()
@@ -164,10 +165,10 @@ namespace FofX.Stateful
             => GetOrAdd((TKey)key);
 
         public IStateNode Add(object key)
-            => AddChild((TKey)key);
+            => AddInternal((TKey)key);
 
         bool IStateDictionary.Remove(object key)
-            => RemoveChild((TKey)key);
+            => RemoveInternal((TKey)key);
 
         public override void Reset()
         {
@@ -190,7 +191,7 @@ namespace FofX.Stateful
             Reset();
 
             foreach (var value in dict)
-                AddChild(serializer.fromJSON(value.Key)).FromJSON(value.Value);
+                AddInternal(serializer.fromJSON(value.Key)).FromJSON(value.Value);
         }
 
         public override void CopyTo(IStateNode copyTo)
@@ -202,62 +203,54 @@ namespace FofX.Stateful
             foreach (var keyToRemove in toRemove)
                 target.Remove(keyToRemove);
 
-            foreach (var kvpToCopy in ElementsInternal())
+            foreach (var kvpToCopy in this)
             {
                 if (!target.TryGetValue(kvpToCopy.Key, out var child))
                     child = target.Add(kvpToCopy.Key);
 
-                kvpToCopy.Value.value.CopyTo(child);
+                kvpToCopy.Value.CopyTo(child);
             }
         }
     }
 
-    public abstract class ReadOnlyStateDictionary<TKey, TValue> : ObservableDictionaryBase<TKey, TValue>,
+    public abstract class ReadOnlyStateDictionary<TKey, TValue> : StateNode,
         IReadOnlyStateDictionary,
+        IDictionaryObservable<TKey, TValue>,
         IEnumerable<KeyValuePair<TKey, TValue>>
         where TValue : IStateNode, new()
     {
-        public string nodeName { get; private set; }
-        public string nodePath { get; private set; }
-        public ILogger logger { get; private set; }
-        public IStateNode root { get; private set; }
-        public IStateNode parent { get; private set; }
-        public bool initialized { get; private set; }
-        public abstract bool isView { get; }
-
-        public int count => GetCountInternal();
-        public TValue this[TKey key] => GetValue(key);
-        public IEnumerable<TKey> keys => GetKeysInternal();
-        public IEnumerable<TValue> values => GetValuesInternal();
+        public int count => _dictionary.Count;
+        public TValue this[TKey key] => _dictionary[key];
+        public IEnumerable<TKey> keys => _dictionary.Keys;
+        public IEnumerable<TValue> values => _dictionary.Values;
 
         public Type keyType => typeof(TKey);
         public Type valueType => typeof(TValue);
 
         IEnumerable IReadOnlyStateDictionary.keys => keys;
-        IEnumerable<IStateNode> IReadOnlyStateDictionary.values => GetValuesInternal().Select(x => (IStateNode)x);
+        IEnumerable<IStateNode> IReadOnlyStateDictionary.values => values.Cast<IStateNode>();
 
-        IStateNode IReadOnlyStateDictionary.this[object key] => GetValue((TKey)key);
+        IStateNode IReadOnlyStateDictionary.this[object key] => this[(TKey)key];
 
-        int IStateNode.childCount => count;
-        IEnumerable<IStateNode> IStateNode.children => GetValuesInternal().Select(x => (IStateNode)x);
+        public override int childCount => count;
+        public override IEnumerable<IStateNode> children => values.Cast<IStateNode>();
 
         IEnumerator<KeyValuePair<TKey, TValue>> IEnumerable<KeyValuePair<TKey, TValue>>.GetEnumerator()
-            => ElementsInternal().Select(x => new KeyValuePair<TKey, TValue>(x.Key, x.Value.value)).GetEnumerator();
+            => ((IEnumerable<KeyValuePair<TKey, TValue>>)_dictionary).GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator()
-            => ElementsInternal().Select(x => new KeyValuePair<TKey, TValue>(x.Key, x.Value.value)).GetEnumerator();
+            => ((IEnumerable<KeyValuePair<TKey, TValue>>)_dictionary).GetEnumerator();
 
-        public ReadOnlyStateDictionary() : base(null) { }
+        private ObservableDictionary<TKey, TValue> _dictionary;
 
-        protected virtual void InitializeInternal() { }
+        public ReadOnlyStateDictionary() : base() { }
 
-        protected override void SendOperation(IDictionaryObserver<TKey, TValue> observer, DictionaryOp<TKey, TValue> operation)
+        protected override void InitializeInternal()
         {
-            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.key, operation.elementId, operation.value)}");
-            base.SendOperation(observer, operation);
+            _dictionary = new ObservableDictionary<TKey, TValue>(context);
         }
 
-        protected TValue AddChild(TKey key)
+        protected TValue AddInternal(TKey key)
         {
             TValue value = new TValue();
 
@@ -267,31 +260,39 @@ namespace FofX.Stateful
             value.Initialize(this, key.ToString());
             value.PostInitialize();
 
-            AddInternal(key, value);
+            logger.Trace(Utility.FormatOperationLog(OpType.Add, this, key, value));
+            _dictionary.Add(key, value);
 
             return value;
         }
 
-        protected bool RemoveChild(TKey key)
+        protected bool RemoveInternal(TKey key)
         {
-            if (!TryGetValueInternal(key, out var value))
+            if (!_dictionary.TryGetValueInternal(key, out var value))
                 return false;
 
             value.Dispose();
 
-            RemoveInternal(key);
+            logger.Trace(Utility.FormatOperationLog(OpType.Remove, this, key, value));
+            _dictionary.Remove(key);
 
             return true;
         }
 
+        protected void ClearInternal()
+        {
+            foreach (var key in keys.ToArray())
+                RemoveInternal(key);
+        }
+
         public bool ContainsKey(TKey key)
-            => ContainsKeyInternal(key);
+            => _dictionary.ContainsKey(key);
 
         public bool ContainsValue(TValue value)
-            => ContainsValueInternal(value);
+            => _dictionary.ContainsValue(value);
 
         public bool TryGetValue(TKey key, out TValue value)
-            => TryGetValueInternal(key, out value);
+            => _dictionary.TryGetValueInternal(key, out value);
 
         bool IReadOnlyStateDictionary.TryGetValue(object key, out IStateNode value)
         {
@@ -305,89 +306,72 @@ namespace FofX.Stateful
             return false;
         }
 
-        protected override void DisposeInternal()
+        protected override IStateNode GetChildInternal(string name)
+            => _dictionary.First(x => x.Key.ToString() == name).Value;
+
+        protected override bool TryGetChildInternal(string name, out IStateNode child)
         {
-            foreach (var child in GetValuesInternal())
-                child.Dispose();
-        }
-
-        // IStateNode
-        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
-        {
-            this.context = context;
-            root = this;
-            this.logger = logger;
-            nodeName = name;
-            nodePath = name;
-            InitializeInternal();
-            initialized = true;
-            ((IStateNode)this).PostInitialize();
-        }
-
-        public void Initialize(IStateNode parent, string name)
-        {
-            if (name == null)
-                throw new ArgumentNullException(nameof(name));
-
-            if (initialized)
-                throw new Exception($"{nodePath} has already been initialized");
-
-            context = parent.context;
-            root = parent.root;
-            this.parent = parent;
-            logger = parent.logger;
-            nodeName = name;
-            nodePath = $"{parent.nodePath}/{nodeName}";
-            InitializeInternal();
-            initialized = true;
-        }
-
-        void IStateNode.PostInitialize()
-        {
-            foreach (var child in GetValuesInternal())
-                child.PostInitialize();
-        }
-
-        void IStateNode.Rename(string name)
-        {
-            nodeName = name;
-            nodePath = parent == null ? name : $"{parent}/{name}";
-            foreach (var child in ElementsInternal())
-                child.Value.value.Rename(child.Value.value.nodeName);
-        }
-
-        IStateNode IStateNode.GetChild(string name)
-            => ElementsInternal().First(x => x.Key.ToString() == name).Value.value;
-
-        bool IStateNode.TryGetChild(string name, out IStateNode child)
-        {
-            child = ElementsInternal().FirstOrDefault(x => x.Key.ToString() == name).Value.value;
+            child = _dictionary.FirstOrDefault(x => x.Key.ToString() == name).Value;
             return child != null;
         }
 
-        public abstract void CopyTo(IStateNode copyTo);
-        public abstract void FromJSON(JSONNode json);
-
-        public JSONNode ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             JSONObject dict = new JSONObject();
             SerializationPair<TKey> serializer = JSONSerialization.GetSerializer<TKey>();
 
-            foreach (var kvp in ElementsInternal().Where(x => filter(x.Value.value)))
-                dict.Add(serializer.toJSON(kvp.Key), kvp.Value.value.ToJSON(filter));
+            foreach (var kvp in _dictionary)
+                dict.Add(serializer.toJSON(kvp.Key), kvp.Value.ToJSON(filter));
 
             return dict;
         }
 
-        public abstract void Reset();
+        protected override void DisposeInternal()
+        {
+            _dictionary.Dispose();
+        }
 
-        // IObserver<StateOperation>
-        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
+        public override IDisposable Subscribe(ObserveThing.IObserver<IOperation> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new DictionaryObserver<TKey, TValue>(
+                onAdd: (id, kvp) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, child = kvp.Value, elementId = id }),
+                onRemove: (id, kvp) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, child = kvp.Value, elementId = id }),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public override IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new DictionaryObserver<TKey, TValue>(
                 onAdd: (id, kvp) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = kvp.Key, child = kvp.Value, elementId = id }),
                 onRemove: (id, kvp) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = kvp.Key, child = kvp.Value, elementId = id }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);
+
+        public IDisposable Subscribe(ICollectionObserver<KeyValuePair<TKey, TValue>> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new DictionaryObserver<TKey, TValue>(
+                onAdd: (id, kvp) => observer.OnAdd(id, kvp),
+                onRemove: (id, kvp) => observer.OnRemove(id, kvp),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(ICollectionObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new DictionaryObserver<TKey, TValue>(
+                onAdd: (id, kvp) => observer.OnAdd(id, kvp),
+                onRemove: (id, kvp) => observer.OnRemove(id, kvp),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(IDictionaryObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new DictionaryObserver<TKey, TValue>(
+                onAdd: (id, kvp) => observer.OnAdd(id, new KeyValuePair<object, object>(kvp.Key, kvp.Value)),
+                onRemove: (id, kvp) => observer.OnRemove(id, new KeyValuePair<object, object>(kvp.Key, kvp.Value)),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(IDictionaryObserver<TKey, TValue> observer, bool immediate = false, uint? priority = null)
+            => _dictionary.Subscribe(observer, immediate, priority);
     }
 }

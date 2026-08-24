@@ -125,6 +125,7 @@ namespace FofX.Stateful
 
         protected override void InitializeInternal()
         {
+            base.InitializeInternal();
             _initializer?.Invoke(this);
         }
 
@@ -177,132 +178,142 @@ namespace FofX.Stateful
         {
             var target = (StateValueSet<T>)copyTo;
 
-            foreach (var toRemove in target.Except(GetElementsInternal().Select(x => x.Key)).ToArray())
+            foreach (var toRemove in target.Except(this).ToArray())
                 target.Remove(toRemove);
 
-            foreach (var toAdd in GetElementsInternal().Select(x => x.Key).Except(target).ToArray())
+            foreach (var toAdd in this.Except(target).ToArray())
                 target.Add(toAdd);
         }
     }
 
-    public abstract class ReadOnlyStateValueSet<T> : ObservableSetBase<T>,
+    public abstract class ReadOnlyStateValueSet<T> : StateNode,
         IReadOnlyStateValueSet,
         ISetObservable<T>,
         IEnumerable<T>
     {
-        public string nodeName { get; private set; }
-        public string nodePath { get; private set; }
-        public ILogger logger { get; private set; }
-        public IStateNode root { get; private set; }
-        public IStateNode parent { get; private set; }
-        public bool initialized { get; private set; }
-        public abstract bool isView { get; }
-
-        public int count => GetCountInternal();
+        public int count => _set.count;
 
         Type IReadOnlyStateValueSet.elementType => typeof(T);
 
-        int IStateNode.childCount => 0;
-        IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
+        public override int childCount => 0;
+        public override IEnumerable<IStateNode> children => EmptyChildren();
+
+        IEnumerator<T> IEnumerable<T>.GetEnumerator()
+            => ((IEnumerable<T>)_set).GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator()
+            => ((IEnumerable)_set).GetEnumerator();
+
+        protected ObservableSet<T> _set;
+
+        public ReadOnlyStateValueSet() : base() { }
 
         private IEnumerable<IStateNode> EmptyChildren()
         {
             yield break;
         }
 
-        IEnumerator<T> IEnumerable<T>.GetEnumerator()
-            => GetElementsInternal().Select(x => x.Key).GetEnumerator();
-
-        IEnumerator IEnumerable.GetEnumerator()
-            => GetElementsInternal().Select(x => x.Key).GetEnumerator();
-
-        public ReadOnlyStateValueSet() : base(null) { }
-
-        protected virtual void InitializeInternal() { }
-
-        protected override void SendOperation(ISetObserver<T> observer, SetOp<T> operation)
+        protected override void InitializeInternal()
         {
-            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.element, operation.elementId)}");
-            base.SendOperation(observer, operation);
+            _set = new ObservableSet<T>(context);
+        }
+
+        protected bool AddInternal(T element)
+        {
+            if (_set.Contains(element))
+                return false;
+
+            logger.Trace(Utility.FormatOperationLog(OpType.Add, this, element));
+            return _set.Add(element);
+        }
+
+        protected bool RemoveInternal(T element)
+        {
+            if (!_set.Contains(element))
+                return false;
+
+            logger.Trace(Utility.FormatOperationLog(OpType.Remove, this, element));
+            return _set.Remove(element);
+        }
+
+        protected void ClearInternal()
+        {
+            foreach (var element in _set.ToArray())
+                RemoveInternal(element);
         }
 
         public bool Contains(T element)
-            => ContainsInternal(element);
+            => _set.Contains(element);
 
         bool IReadOnlyStateValueSet.Contains(object element)
             => Contains((T)element);
 
-        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
-        {
-            this.context = context;
-            root = this;
-            this.logger = logger;
-            nodeName = name;
-            nodePath = name;
-            InitializeInternal();
-            initialized = true;
-            ((IStateNode)this).PostInitialize();
-        }
-
-        // IStateNode
-        public void Initialize(IStateNode parent, string name)
-        {
-            if (name == null)
-                throw new ArgumentNullException(nameof(name));
-
-            if (initialized)
-                throw new Exception($"{nodePath} has already been initialized");
-
-            context = parent.context;
-            root = parent.root;
-            this.parent = parent;
-            logger = parent.logger;
-            nodeName = name;
-            nodePath = $"{parent.nodePath}/{nodeName}";
-            InitializeInternal();
-            initialized = true;
-        }
-
-        void IStateNode.PostInitialize() { }
-
-        void IStateNode.Rename(string name)
-        {
-            nodeName = name;
-            nodePath = parent == null ? name : $"{parent}/{name}";
-        }
-
-        IStateNode IStateNode.GetChild(string name)
+        protected override IStateNode GetChildInternal(string name)
             => throw new NotImplementedException();
 
-        bool IStateNode.TryGetChild(string name, out IStateNode child)
+        protected override bool TryGetChildInternal(string name, out IStateNode child)
         {
             child = default;
             return false;
         }
 
-        public abstract void CopyTo(IStateNode copyTo);
-        public abstract void FromJSON(JSONNode json);
-
-        public JSONNode ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             JSONArray array = new JSONArray();
             SerializationPair<T> serializer = JSONSerialization.GetSerializer<T>();
 
-            foreach (var element in GetElementsInternal())
-                array.Add(serializer.toJSON(element.Key));
+            foreach (var element in _set)
+                array.Add(serializer.toJSON(element));
 
             return array;
         }
 
-        public abstract void Reset();
+        protected override void DisposeInternal()
+        {
+            _set.Dispose();
+        }
 
-        // IObserver<StateOperation>
-        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
+        public override IDisposable Subscribe(ObserveThing.IObserver<IOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new SetObserver<T>(
                 onAdd: (id, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = element, elementId = id }),
                 onRemove: (id, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = element, elementId = id }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);
+
+        public override IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new SetObserver<T>(
+                onAdd: (id, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = element, elementId = id }),
+                onRemove: (id, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = element, elementId = id }),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(ICollectionObserver<T> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new SetObserver<T>(
+                onAdd: (id, element) => observer.OnAdd(id, element),
+                onRemove: (id, element) => observer.OnRemove(id, element),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(ICollectionObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new SetObserver<T>(
+                onAdd: (id, element) => observer.OnAdd(id, element),
+                onRemove: (id, element) => observer.OnRemove(id, element),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(ISetObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new SetObserver<T>(
+                onAdd: (id, element) => observer.OnAdd(id, element),
+                onRemove: (id, element) => observer.OnRemove(id, element),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(ISetObserver<T> observer, bool immediate = false, uint? priority = null)
+            => _set.Subscribe(observer, immediate, priority);
     }
 }

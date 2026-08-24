@@ -71,10 +71,10 @@ namespace FofX.Stateful
         {
             _mutator = new Mutator()
             {
-                add = AddChild,
-                insert = InsertChild,
-                remove = RemoveChild,
-                removeAt = RemoveChildAt,
+                add = AddInternal,
+                insert = InsertInternal,
+                remove = RemoveInternal,
+                removeAt = RemoveAtInternal,
                 clear = ClearInternal
             };
         }
@@ -111,8 +111,8 @@ namespace FofX.Stateful
         {
             logger.Warning($"{nodePath} is a view. \'Reset\' will be ignored for this object. Children will be reset.");
 
-            foreach (var child in ElementsInternal())
-                child.value.Reset();
+            foreach (var child in this)
+                child.Reset();
         }
 
         protected override void DisposeInternal()
@@ -135,20 +135,21 @@ namespace FofX.Stateful
 
         protected override void InitializeInternal()
         {
+            base.InitializeInternal();
             _initializer?.Invoke(this);
         }
 
         public T Insert(int index)
-            => InsertChild(index);
+            => InsertInternal(index);
 
         public void RemoveAt(int index)
-            => RemoveChildAt(index);
+            => RemoveAtInternal(index);
 
         public T Add()
-            => AddChild();
+            => AddInternal();
 
         public bool Remove(T element)
-            => RemoveChild(element);
+            => RemoveInternal(element);
 
         public void Clear()
             => ClearInternal();
@@ -204,49 +205,39 @@ namespace FofX.Stateful
         }
     }
 
-    public abstract class ReadOnlyStateList<T> : ObservableListBase<T>,
+    public abstract class ReadOnlyStateList<T> : StateNode,
         IReadOnlyStateList,
+        IListObservable<T>,
         IEnumerable<T>
         where T : IStateNode, new()
     {
-        public string nodeName { get; private set; }
-        public string nodePath { get; private set; }
-        public ILogger logger { get; private set; }
-        public IStateNode root { get; private set; }
-        public IStateNode parent { get; private set; }
-        public bool initialized { get; private set; }
-        public abstract bool isView { get; }
-
-        public int count => GetCountInternal();
-        public T this[int index] => ElementAtInternal(index);
+        public int count => _list.count;
+        public T this[int index] => _list[index];
 
         public Type itemType => typeof(T);
+        public override int childCount => _list.count;
+        public override IEnumerable<IStateNode> children => _list.Cast<IStateNode>();
 
         IStateNode IReadOnlyStateList.this[int index] => this[index];
-
-        int IStateNode.childCount => GetCountInternal();
-        IEnumerable<IStateNode> IStateNode.children => ElementsInternal().Select(x => (IStateNode)x.value);
-
         IEnumerator<T> IEnumerable<T>.GetEnumerator()
-            => ElementsInternal().Select(x => x.value).GetEnumerator();
+            => ((IEnumerable<T>)_list).GetEnumerator();
 
         IEnumerator IEnumerable.GetEnumerator()
-            => ElementsInternal().Select(x => x.value).GetEnumerator();
+            => ((IEnumerable)_list).GetEnumerator();
 
-        public ReadOnlyStateList() : base(default) { }
+        private ObservableList<T> _list;
 
-        protected virtual void InitializeInternal() { }
+        public ReadOnlyStateList() : base() { }
 
-        protected override void SendOperation(IListObserver<T> observer, ListOp<T> operation)
+        protected override void InitializeInternal()
         {
-            logger.Trace($"Notifying {Utility.FormatOperationLog(operation.isRemove ? OpType.Remove : OpType.Add, this, operation.index, operation.elementId, operation.element)}");
-            base.SendOperation(observer, operation);
+            _list = new ObservableList<T>(context);
         }
 
-        protected T AddChild()
-            => InsertChild(count);
+        protected T AddInternal()
+            => InsertInternal(count);
 
-        protected T InsertChild(int index)
+        protected T InsertInternal(int index)
         {
             var element = new T();
             element.Initialize(this, index.ToString());
@@ -254,23 +245,24 @@ namespace FofX.Stateful
             for (int i = index + 1; i < count; i++)
                 this[i].Rename(i.ToString());
 
-            InsertInternal(index, element);
+            logger.Trace(Utility.FormatOperationLog(OpType.Add, this, index, element));
+            _list.Insert(index, element);
 
             return element;
         }
 
-        protected bool RemoveChild(T element)
+        protected bool RemoveInternal(T element)
         {
-            var index = IndexOfInternal(element);
+            var index = _list.IndexOf(element);
 
             if (index == -1)
                 return false;
 
-            RemoveChildAt(index);
+            RemoveAtInternal(index);
             return true;
         }
 
-        protected void RemoveChildAt(int index)
+        protected void RemoveAtInternal(int index)
         {
             var element = this[index];
             element.Dispose();
@@ -278,14 +270,25 @@ namespace FofX.Stateful
             for (int i = index; i < count; i++)
                 this[i].Rename(i.ToString());
 
-            RemoveAtInternal(index);
+            logger.Trace(Utility.FormatOperationLog(OpType.Remove, this, index, element));
+            _list.RemoveAt(index);
+        }
+
+        protected void ClearInternal()
+        {
+            for (int i = count - 1; i >= 0; i--)
+            {
+                var element = this[i];
+                logger.Trace(Utility.FormatOperationLog(OpType.Remove, this, i, element));
+                RemoveAtInternal(i);
+            }
         }
 
         public bool Contains(T element)
-            => ContainsInternal(element);
+            => _list.Contains(element);
 
         public int IndexOf(T element)
-            => IndexOfInternal(element);
+            => _list.IndexOf(element);
 
         bool IReadOnlyStateList.Contains(IStateNode element)
             => Contains((T)element);
@@ -293,68 +296,17 @@ namespace FofX.Stateful
         int IReadOnlyStateList.IndexOf(IStateNode node)
             => IndexOf((T)node);
 
-        protected override void DisposeInternal()
-        {
-            foreach (var child in ElementsInternal())
-                child.value.Dispose();
-        }
-
-        // IStateNode
-        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
-        {
-            this.context = context;
-            root = this;
-            this.logger = logger;
-            nodeName = name;
-            nodePath = name;
-            InitializeInternal();
-            initialized = true;
-            ((IStateNode)this).PostInitialize();
-        }
-
-        public void Initialize(IStateNode parent, string name)
-        {
-            if (name == null)
-                throw new ArgumentNullException(nameof(name));
-
-            if (initialized)
-                throw new Exception($"{nodePath} has already been initialized");
-
-            context = parent.context;
-            root = parent.root;
-            this.parent = parent;
-            logger = parent.logger;
-            nodeName = name;
-            nodePath = $"{parent.nodePath}/{nodeName}";
-            InitializeInternal();
-            initialized = true;
-        }
-
-        void IStateNode.PostInitialize()
-        {
-            foreach (var child in this)
-                child.PostInitialize();
-        }
-
-        public void Rename(string name)
-        {
-            nodeName = name;
-            nodePath = parent == null ? name : $"{parent}/{name}";
-            foreach (var child in ElementsInternal())
-                child.value.Rename(child.value.nodeName);
-        }
-
-        public IStateNode GetChild(string name)
+        protected override IStateNode GetChildInternal(string name)
         {
             var index = int.Parse(name);
-            return ElementAtInternal(index);
+            return _list[index];
         }
 
-        public bool TryGetChild(string name, out IStateNode child)
+        protected override bool TryGetChildInternal(string name, out IStateNode child)
         {
             if (int.TryParse(name, out var index) && index < count)
             {
-                child = ElementAtInternal(index);
+                child = _list[index];
                 return true;
             }
 
@@ -362,10 +314,7 @@ namespace FofX.Stateful
             return false;
         }
 
-        public abstract void CopyTo(IStateNode copyTo);
-        public abstract void FromJSON(JSONNode json);
-
-        public JSONNode ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
         {
             JSONArray array = new JSONArray();
 
@@ -379,15 +328,52 @@ namespace FofX.Stateful
             return array;
         }
 
-        public abstract void Reset();
+        protected override void DisposeInternal()
+        {
+            _list.Dispose();
+        }
 
-        // IObserver<StateOperation>
-        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
+        public override IDisposable Subscribe(ObserveThing.IObserver<IOperation> observer, bool immediate = false, uint? priority = null)
             => Subscribe(new ListObserver<T>(
                 onAdd: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = index, child = element, elementId = id }),
                 onRemove: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = index, child = element, elementId = id }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);
+
+        public override IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ListObserver<T>(
+                onAdd: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Add, param = index, child = element, elementId = id }),
+                onRemove: (id, index, element) => observer.OnNext(new StateOperation() { source = this, opType = OpType.Remove, param = index, child = element, elementId = id }),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(ICollectionObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ListObserver<T>(
+                onAdd: (id, index, element) => observer.OnAdd(id, element),
+                onRemove: (id, index, element) => observer.OnRemove(id, element),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(ICollectionObserver<T> observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ListObserver<T>(
+                onAdd: (id, index, element) => observer.OnAdd(id, element),
+                onRemove: (id, index, element) => observer.OnRemove(id, element),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(IListObserver observer, bool immediate = false, uint? priority = null)
+            => Subscribe(new ListObserver<T>(
+                onAdd: (id, index, element) => observer.OnAdd(id, index, element),
+                onRemove: (id, index, element) => observer.OnRemove(id, index, element),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(IListObserver<T> observer, bool immediate = false, uint? priority = null)
+            => _list.Subscribe(observer, immediate, priority);
     }
 }
