@@ -6,16 +6,22 @@ namespace FofX.Stateful
     public class ChildrenObservable : IDisposable
     {
         private IDisposable _sourceSubscription;
-        private ISetOperand<IStateNode> _operand;
+        private ObservableSet<IStateNode> _operand;
         private bool _initializing;
         private bool _disposed;
 
-        public ChildrenObservable(IStateNode source, ISetOperand<IStateNode> operand)
+        public ChildrenObservable(IStateNode source, ObservableSet<IStateNode> operand)
         {
             _operand = operand;
 
             _initializing = true;
-            _sourceSubscription = source.Subscribe(onNext: HandleSourceChanged, onDispose: Dispose, immediate: true);
+            _sourceSubscription = source.Subscribe(
+                onNext: HandleSourceChanged,
+                onError: operand.OnError,
+                onDispose: Dispose,
+                immediate: true
+            );
+
             _initializing = false;
 
             foreach (var child in source.children)
@@ -48,7 +54,7 @@ namespace FofX.Stateful
             _disposed = true;
 
             _sourceSubscription?.Dispose();
-            _operand.OnDisposed();
+            _operand.Dispose();
         }
     }
 }

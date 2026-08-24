@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using ObserveThing;
 
 namespace FofX.Stateful
@@ -29,6 +26,6 @@ namespace FofX.Stateful
             => source.ObservableChildrenRecursive().ObservableCombine();
 
         public static ObserveThing.IObservable<StateOperation> ObservableCombineRecursive(this IStateNode source)
-            => new ObservableSet<IStateNode>(source.context, source).ObservableCombineRecursive();
+            => new ObservableSet<IStateNode>(source.context, new IStateNode[] { source }).ObservableCombineRecursive();
     }
 }

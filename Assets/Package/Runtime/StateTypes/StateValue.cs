@@ -47,7 +47,7 @@ namespace FofX.Stateful
 
         public StateValueView()
         {
-            _mutator = new Mutator() { get = () => _value, set = SetValueInternal };
+            _mutator = new Mutator() { get = () => value, set = x => value = x };
         }
 
         public void InitializeView(Action<IStateValueViewMutator<T>> initialize)
@@ -96,8 +96,8 @@ namespace FofX.Stateful
 
         new public T value
         {
-            get => _value;
-            set => SetValueInternal(value);
+            get => base.value;
+            set => base.value = value;
         }
 
         object IStateValue.value
@@ -116,6 +116,7 @@ namespace FofX.Stateful
 
         protected override void InitializeInternal()
         {
+            base.InitializeInternal();
             _initializer?.Invoke(this);
         }
 
@@ -134,110 +135,82 @@ namespace FofX.Stateful
                 return;
             }
 
-            SetValueInternal(JSONSerialization.FromJSON<T>(json));
+            value = JSONSerialization.FromJSON<T>(json);
         }
 
         public override void CopyTo(IStateNode copyTo)
-            => ((StateValue<T>)copyTo).SetValueInternal(value);
+            => ((StateValue<T>)copyTo).value = value;
     }
 
-    public abstract class ReadOnlyStateValue<T> : ObservableValueBase<T>,
+    public abstract class ReadOnlyStateValue<T> : StateNode,
         IReadOnlyStateValue,
         IValueObservable<T>
     {
-        public string nodeName { get; private set; }
-        public string nodePath { get; private set; }
-        public IStateNode root { get; private set; }
-        public ILogger logger { get; private set; }
-        public IStateNode parent { get; private set; }
-        public bool initialized { get; private set; }
-        public abstract bool isView { get; }
-
-        public T value => _value;
         public Type valueType => typeof(T);
+        public T value
+        {
+            get => _value.value;
+            set
+            {
+                if (Equals(value, _value.value))
+                    return;
+
+                logger.Trace(Utility.FormatOperationLog(OpType.Set, this, value));
+                _value.value = value;
+            }
+        }
+
+        public override IEnumerable<IStateNode> children => EmptyChildren();
+        public override int childCount => 0;
 
         object IReadOnlyStateValue.value => value;
 
-        int IStateNode.childCount => 0;
-        IEnumerable<IStateNode> IStateNode.children => EmptyChildren();
+        private ObservableValue<T> _value;
+
+        protected override void InitializeInternal()
+        {
+            _value = new ObservableValue<T>(context);
+        }
 
         private IEnumerable<IStateNode> EmptyChildren()
         {
             yield break;
         }
 
-        public ReadOnlyStateValue() : base(default) { }
-
-        protected virtual void InitializeInternal() { }
-
-        protected override void SendOperation(IValueObserver<T> observer, ValueOp<T> operation)
-        {
-            logger.Trace($"Notifying {Utility.FormatOperationLog(OpType.Set, this, operation.value)}");
-            base.SendOperation(observer, operation);
-        }
-
-        // IStateNode
-        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
-        {
-            this.context = context;
-            root = this;
-            this.logger = logger;
-            nodeName = name;
-            nodePath = name;
-            InitializeInternal();
-            initialized = true;
-            ((IStateNode)this).PostInitialize();
-        }
-
-        public void Initialize(IStateNode parent, string name)
-        {
-            if (name == null)
-                throw new ArgumentNullException(nameof(name));
-
-            if (initialized)
-                throw new Exception($"{nodePath} has already been initialized");
-
-            context = parent.context;
-            root = parent.root;
-            this.parent = parent;
-            logger = parent.logger;
-            nodeName = name;
-            nodePath = $"{parent.nodePath}/{nodeName}";
-            InitializeInternal();
-            initialized = true;
-        }
-
-        void IStateNode.PostInitialize() { }
-
-        void IStateNode.Rename(string name)
-        {
-            nodeName = name;
-            nodePath = parent == null ? name : $"{parent}/{name}";
-        }
-
-        IStateNode IStateNode.GetChild(string name)
+        protected override IStateNode GetChildInternal(string childName)
             => throw new NotImplementedException();
 
-        bool IStateNode.TryGetChild(string name, out IStateNode child)
+        protected override bool TryGetChildInternal(string childName, out IStateNode child)
         {
             child = default;
             return false;
         }
 
-        public abstract void CopyTo(IStateNode copyTo);
-        public abstract void FromJSON(JSONNode json);
-
-        public JSONNode ToJSON(Func<IStateNode, bool> filter)
+        public override JSONNode ToJSON(Func<IStateNode, bool> filter)
             => JSONSerialization.ToJSON(value);
 
-        public abstract void Reset();
-
-        // IObserver<StateOperation>
-        public IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
-            => Subscribe(new ValueObserver<T>(
+        public override IDisposable Subscribe(ObserveThing.IObserver<IOperation> observer, bool immediate = false, uint? priority = null)
+            => _value.Subscribe(new ValueObserver<T>(
                 onNext: x => observer.OnNext(new StateOperation() { source = this, opType = OpType.Set, param = x }),
                 onDispose: observer.OnDispose,
                 onError: observer.OnError
             ), immediate, priority);
+
+        public override IDisposable Subscribe(ObserveThing.IObserver<StateOperation> observer, bool immediate = false, uint? priority = null)
+            => _value.Subscribe(new ValueObserver<T>(
+                onNext: x => observer.OnNext(new StateOperation() { source = this, opType = OpType.Set, param = x }),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(IValueObserver observer, bool immediate = false, uint? priority = null)
+            => _value.Subscribe(new ValueObserver<T>(
+                onNext: x => observer.OnNext(x),
+                onDispose: observer.OnDispose,
+                onError: observer.OnError
+            ), immediate, priority);
+
+        public IDisposable Subscribe(IValueObserver<T> observer, bool immediate = false, uint? priority = null)
+            => _value.Subscribe(observer, immediate, priority);
     }
 }

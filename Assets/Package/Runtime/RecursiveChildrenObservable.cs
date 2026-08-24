@@ -7,12 +7,12 @@ namespace FofX.Stateful
     public class RecursiveChildrenObservable : IDisposable
     {
         private IDisposable _stream;
-        private ISetOperand<IStateNode> _operand;
+        private ObservableSet<IStateNode> _operand;
         private Dictionary<IStateNode, IDisposable> _subscriptions = new Dictionary<IStateNode, IDisposable>();
         private bool _disposed;
         private uint _priority;
 
-        public RecursiveChildrenObservable(IStateNode source, ISetOperand<IStateNode> operand)
+        public RecursiveChildrenObservable(IStateNode source, ObservableSet<IStateNode> operand)
         {
             _operand = operand;
             _stream = source.Subscribe(onDispose: Dispose, immediate: true);
@@ -58,7 +58,7 @@ namespace FofX.Stateful
             foreach (var entry in _subscriptions.Values)
                 entry?.Dispose();
 
-            _operand.OnDisposed();
+            _operand.Dispose();
         }
     }
 }

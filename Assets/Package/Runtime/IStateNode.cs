@@ -29,6 +29,7 @@ namespace FofX.Stateful
 
     public interface IStateNode : ObserveThing.IObservable<StateOperation>, IDisposable
     {
+        new ObservationContext context { get; }
         string nodeName { get; }
         string nodePath { get; }
         IStateNode root { get; }
@@ -49,42 +50,5 @@ namespace FofX.Stateful
         void Rename(string name);
         IStateNode GetChild(string name);
         bool TryGetChild(string name, out IStateNode child);
-
-        IStateNode FindChild(string path)
-        {
-            var currDownstream = this;
-            var pathSegments = path.Split('/');
-            var startIndex = 0;
-
-            if (pathSegments[0] == nodeName)
-                startIndex = 1;
-
-            for (int i = startIndex; i < pathSegments.Length; i++)
-                currDownstream = currDownstream.GetChild(pathSegments[i]);
-
-            return currDownstream;
-        }
-
-        bool TryFindChild(string path, out IStateNode child)
-        {
-            var currDownstream = this;
-            var pathSegments = path.Split('/');
-            var startIndex = 0;
-
-            if (pathSegments[0] == nodeName)
-                startIndex = 1;
-
-            for (int i = startIndex; i < pathSegments.Length; i++)
-            {
-                if (!currDownstream.TryGetChild(pathSegments[i], out currDownstream))
-                {
-                    child = default;
-                    return false;
-                }
-            }
-
-            child = currDownstream;
-            return true;
-        }
     }
 }
