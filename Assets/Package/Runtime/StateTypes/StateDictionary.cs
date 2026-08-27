@@ -161,10 +161,10 @@ namespace FofX.Stateful
         public void Clear()
             => ClearInternal();
 
-        public IStateNode GetOrAdd(object key)
+        IStateNode IStateDictionary.GetOrAdd(object key)
             => GetOrAdd((TKey)key);
 
-        public IStateNode Add(object key)
+        IStateNode IStateDictionary.Add(object key)
             => AddInternal((TKey)key);
 
         bool IStateDictionary.Remove(object key)
