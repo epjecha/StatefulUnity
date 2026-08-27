@@ -62,7 +62,7 @@ namespace FofX.Stateful
                 child.PostInitialize();
         }
 
-        IStateNode IStateNode.GetChild(string path)
+        public IStateNode GetChild(string path)
         {
             if (string.IsNullOrEmpty(path))
                 return this;
@@ -84,7 +84,7 @@ namespace FofX.Stateful
             return currDownstream;
         }
 
-        bool IStateNode.TryGetChild(string path, out IStateNode child)
+        public bool TryGetChild(string path, out IStateNode child)
         {
             if (string.IsNullOrEmpty(path))
             {
