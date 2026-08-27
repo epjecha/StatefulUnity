@@ -40,8 +40,8 @@ namespace FofX.Stateful
         bool initialized { get; }
         bool disposed { get; }
         bool isView { get; }
-        void Initialize(ObservationContext context, ILogger logger, string name = "root");
-        void Initialize(IStateNode parent, string name);
+        void Initialize(ObservationContext context, ILogger logger, string name = "root", Attribute[] attributes = null);
+        void Initialize(IStateNode parent, string name, Attribute[] attributes);
         void PostInitialize();
         void Reset();
         void CopyTo(IStateNode copyTo);

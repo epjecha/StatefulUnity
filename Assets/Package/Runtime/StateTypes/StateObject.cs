@@ -7,6 +7,11 @@ using SimpleJSON;
 
 namespace FofX.Stateful
 {
+    public interface IInheritableStateAttribute
+    {
+        bool inherit { get; }
+    }
+
     public class StateObject : StateNode
     {
         public override IEnumerable<IStateNode> children => _children.Values;
@@ -23,6 +28,8 @@ namespace FofX.Stateful
             _observable = new Observable<StateOperation>(context, default);
 
             var type = GetType();
+            var inheritedAttributes = attributes.Where(x => x is IInheritableStateAttribute inheritable && inheritable.inherit);
+
             while (type != typeof(StateObject))
             {
                 // certain platforms require that binding flags be set explicitly, or all inherited
@@ -40,7 +47,7 @@ namespace FofX.Stateful
                     IStateNode child = (IStateNode)(property.GetValue(this) ?? Activator.CreateInstance(property.PropertyType));
                     property.SetValue(this, child);
                     _children.Add(property.Name, child);
-                    child.Initialize(this, property.Name);
+                    child.Initialize(this, property.Name, inheritedAttributes.Concat(property.GetCustomAttributes()).ToArray());
                 }
 
                 type = type.BaseType;

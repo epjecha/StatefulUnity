@@ -257,7 +257,7 @@ namespace FofX.Stateful
             if (value is IKeyedStateNode<TKey> keyedNode)
                 keyedNode.AssignKey(key);
 
-            value.Initialize(this, key.ToString());
+            value.Initialize(this, key.ToString(), attributes.Where(x => x is IInheritableStateAttribute inheritable && inheritable.inherit).ToArray());
             value.PostInitialize();
 
             logger.Trace(Utility.FormatOperationLog(OpType.Add, this, key, value));

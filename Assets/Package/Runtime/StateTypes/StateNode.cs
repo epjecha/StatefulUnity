@@ -8,6 +8,7 @@ namespace FofX.Stateful
     public abstract class StateNode : IStateNode
     {
         public ObservationContext context { get; private set; }
+        public Attribute[] attributes { get; private set; }
         public string nodeName { get; private set; }
         public string nodePath { get; private set; }
         public IStateNode root { get; private set; }
@@ -21,19 +22,20 @@ namespace FofX.Stateful
 
         public StateNode() { }
 
-        public void Initialize(ObservationContext context, ILogger logger, string name = "root")
+        public void Initialize(ObservationContext context, ILogger logger, string name = "root", Attribute[] attributes = null)
         {
             this.context = context;
             root = this;
             this.logger = logger;
             nodeName = name;
             nodePath = name;
+            this.attributes = attributes ?? new Attribute[0];
             InitializeInternal();
             initialized = true;
             PostInitialize();
         }
 
-        public void Initialize(IStateNode parent, string name)
+        public void Initialize(IStateNode parent, string name, Attribute[] attributes)
         {
             if (name == null)
                 throw new System.ArgumentNullException(nameof(name));
@@ -47,6 +49,7 @@ namespace FofX.Stateful
             logger = parent.logger;
             nodeName = name;
             nodePath = $"{parent.nodePath}/{nodeName}";
+            this.attributes = attributes ?? new Attribute[0];
             InitializeInternal();
             initialized = true;
         }

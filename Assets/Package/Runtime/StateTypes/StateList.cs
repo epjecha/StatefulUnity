@@ -240,7 +240,7 @@ namespace FofX.Stateful
         protected T InsertInternal(int index)
         {
             var element = new T();
-            element.Initialize(this, index.ToString());
+            element.Initialize(this, index.ToString(), attributes.Where(x => x is IInheritableStateAttribute inheritable && inheritable.inherit).ToArray());
 
             for (int i = index + 1; i < count; i++)
                 this[i].Rename(i.ToString());
