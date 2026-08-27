@@ -30,6 +30,7 @@ namespace FofX.Stateful
     public interface IStateNode : ObserveThing.IObservable<StateOperation>, IDisposable
     {
         new ObservationContext context { get; }
+        Attribute[] attributes { get; }
         string nodeName { get; }
         string nodePath { get; }
         IStateNode root { get; }
