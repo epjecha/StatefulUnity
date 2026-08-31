@@ -150,7 +150,7 @@ namespace FofX.Stateful
         public T value
         {
             get => _value.value;
-            set
+            protected set
             {
                 if (Equals(value, _value.value))
                     return;

@@ -320,7 +320,7 @@ namespace FofX.Stateful
             JSONObject dict = new JSONObject();
             SerializationPair<TKey> serializer = JSONSerialization.GetSerializer<TKey>();
 
-            foreach (var kvp in _dictionary)
+            foreach (var kvp in _dictionary.Where(x => filter(x.Value)))
                 dict.Add(serializer.toJSON(kvp.Key), kvp.Value.ToJSON(filter));
 
             return dict;
