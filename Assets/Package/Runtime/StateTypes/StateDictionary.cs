@@ -7,8 +7,6 @@ using ObserveThing;
 
 using SimpleJSON;
 
-using FofX.Serialization;
-
 namespace FofX.Stateful
 {
     public interface IReadOnlyStateDictionary : IEnumerable, IStateNode, IDictionaryObservable

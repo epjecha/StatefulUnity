@@ -1,10 +1,10 @@
 using System;
 
-namespace FofX
+namespace FofX.Stateful
 {
     public class DefaultLogger : ILogger
     {
-        public LogLevel logLevel = LogLevel.Debug;
+        public LogLevel logLevel { get; set; } = LogLevel.Debug;
 
         public bool LevelEnabled(LogLevel logLevel)
             => this.logLevel <= logLevel;

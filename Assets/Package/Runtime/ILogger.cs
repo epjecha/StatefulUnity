@@ -1,6 +1,6 @@
 using System;
 
-namespace FofX
+namespace FofX.Stateful
 {
     public enum LogLevel
     {
@@ -15,6 +15,8 @@ namespace FofX
 
     public interface ILogger
     {
+        LogLevel logLevel { get; set; }
+
         bool LevelEnabled(LogLevel logLevel);
         void Generic(LogLevel logLevel, string message = default, Exception exception = default);
         void Trace(string message);

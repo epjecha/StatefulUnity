@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using SimpleJSON;
 
-namespace FofX.Serialization
+namespace FofX.Stateful
 {
     public abstract class SerializationPair
     {

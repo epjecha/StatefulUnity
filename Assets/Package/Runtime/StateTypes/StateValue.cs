@@ -4,8 +4,6 @@ using System.Collections.Generic;
 using ObserveThing;
 using SimpleJSON;
 
-using FofX.Serialization;
-
 namespace FofX.Stateful
 {
     public interface IReadOnlyStateValue : IStateNode, IValueObservable
