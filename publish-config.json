@@ -1,0 +1,14 @@
+{
+  "packages": [
+    {
+      "name": "stateful",
+      "path": "Assets/Package",
+      "major_minor": "1.0",
+      "feeds": { "npm": "com.fofx.stateful" }
+    }
+  ],
+  "apps": [],
+  "compose_files": [],
+  "ci_workflow": "ci.yml",
+  "mirror_prefix": "ghcr.io/outernet-foundation/mirror"
+}
