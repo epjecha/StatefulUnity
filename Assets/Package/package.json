@@ -1,14 +1,26 @@
 {
     "name": "com.fofx.stateful",
     "version": "0.0.0-local",
-    "displayName": "Stateful",
     "description": "Observable state management for Unity.",
-    "unity": "2021.3",
-    "license": "MIT",
-    "author": {
-        "name": "Elliot Pjecha",
-        "email": "epjecha@gmail.com"
+    "keywords": [
+        "state",
+        "observability",
+        "C#",
+        "csharp",
+        "reactive"
+    ],
+    "homepage": "https://github.com/epjecha/StatefulUnity#readme",
+    "bugs": {
+        "url": "https://github.com/epjecha/StatefulUnity/issues"
     },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/epjecha/StatefulUnity.git"
+    },
+    "license": "MIT",
+    "author": "Elliot Pjecha <epjecha@gmail.com>",
+    "displayName": "Stateful",
+    "unity": "2021.3",
     "dependencies": {
         "com.fofx.observething": "1.1.0"
     }
