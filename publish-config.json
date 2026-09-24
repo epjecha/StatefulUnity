@@ -3,7 +3,7 @@
     {
       "name": "stateful",
       "path": "Assets/Package",
-      "major_minor": "1.0",
+      "major_minor": "1.1",
       "feeds": { "npm": "com.fofx.stateful" }
     }
   ],
